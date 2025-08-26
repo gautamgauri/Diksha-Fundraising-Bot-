@@ -1,0 +1,5 @@
+flask
+gunicorn
+slack_bolt
+gspread
+oauth2client

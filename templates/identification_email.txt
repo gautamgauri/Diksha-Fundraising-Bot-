@@ -1,0 +1,4 @@
+Subject: Partnership Opportunity
+
+Dear ${contact_name},
+This is a sample template.
