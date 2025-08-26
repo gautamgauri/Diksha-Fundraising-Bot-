@@ -1,5 +1,7 @@
 # Diksha Fundraising Bot
 
+**Copyright (c) 2025 Diksha Foundation - All Rights Reserved**
+
 A Slack bot for managing Diksha Foundation's fundraising pipeline with automated donor tracking and communication.
 
 ## Features
