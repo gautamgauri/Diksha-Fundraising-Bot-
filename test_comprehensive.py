@@ -5,7 +5,7 @@ Tests all functionality with proper error handling and logging
 """
 
 import logging
-from app.modules.sheets_sync import SheetsDB
+from sheets_sync import SheetsDB
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

@@ -9,7 +9,7 @@ from slack_bolt import App as SlackApp
 from slack_bolt.adapter.flask import SlackRequestHandler
 
 # Google Sheets integration
-from app.modules.sheets_sync import SheetsDB
+from sheets_sync import SheetsDB
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

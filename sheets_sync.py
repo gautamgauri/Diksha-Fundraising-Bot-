@@ -17,7 +17,7 @@ except ImportError:
     FUZZYWUZZY_AVAILABLE = False
     logger.warning("⚠️ fuzzywuzzy not available - using basic string matching")
 
-from .google_auth import create_google_clients
+from google_auth import create_google_clients
 
 logger = logging.getLogger(__name__)
 
