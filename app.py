@@ -216,6 +216,8 @@ def index():
             "tab_data": "/debug/tab-data?tab=<tab_name>",
             "drive_files": "/debug/drive-files",
             "search_drive": "/debug/search-drive?q=<query>",
+            "institutional_grants": "/debug/institutional-grants",
+            "drive_summary": "/debug/drive-summary",
             "comprehensive_search": "/debug/comprehensive-search?q=<query>"
         }
     })
@@ -552,8 +554,13 @@ def debug_comprehensive_search():
     # Search in sheets
     sheet_matches = sheets_db.search_across_all_tabs(query)
     
-    # Search in drive
-    drive_files = sheets_db.search_drive_files(query)
+    # Search in all drive folders
+    drive_results = sheets_db.search_all_drive_folders(query)
+    
+    # Count total drive matches
+    total_drive_matches = len(drive_results.get("donor_profiles", []))
+    for subfolder_files in drive_results.get("institutional_grants", {}).values():
+        total_drive_matches += len(subfolder_files)
     
     return jsonify({
         "query": query,
@@ -566,15 +573,56 @@ def debug_comprehensive_search():
             } for m in sheet_matches]
         },
         "drive_results": {
-            "count": len(drive_files),
-            "files": [{
-                "name": f['name'],
-                "id": f['id'],
-                "type": f['mimeType'],
-                "link": f['webViewLink']
-            } for f in drive_files]
+            "total_count": total_drive_matches,
+            "donor_profiles": {
+                "count": len(drive_results.get("donor_profiles", [])),
+                "files": [{"name": f['name'], "id": f['id'], "link": f['webViewLink']} for f in drive_results.get("donor_profiles", [])]
+            },
+            "institutional_grants": {
+                "Templates": {"count": len(drive_results.get("institutional_grants", {}).get("Templates", [])), "files": [{"name": f['name'], "id": f['id']} for f in drive_results.get("institutional_grants", {}).get("Templates", [])]},
+                "Secured Grants": {"count": len(drive_results.get("institutional_grants", {}).get("Secured Grants", [])), "files": [{"name": f['name'], "id": f['id']} for f in drive_results.get("institutional_grants", {}).get("Secured Grants", [])]},
+                "Resources": {"count": len(drive_results.get("institutional_grants", {}).get("Resources", [])), "files": [{"name": f['name'], "id": f['id']} for f in drive_results.get("institutional_grants", {}).get("Resources", [])]},
+                "Active Prospects": {"count": len(drive_results.get("institutional_grants", {}).get("Active Prospects", [])), "files": [{"name": f['name'], "id": f['id']} for f in drive_results.get("institutional_grants", {}).get("Active Prospects", [])]},
+                "Archive": {"count": len(drive_results.get("institutional_grants", {}).get("Archive", [])), "files": [{"name": f['name'], "id": f['id']} for f in drive_results.get("institutional_grants", {}).get("Archive", [])]}
+            }
         },
-        "total_results": len(sheet_matches) + len(drive_files),
+        "total_results": len(sheet_matches) + total_drive_matches,
+        "sheets_connected": True,
+        "mode": "slack-bolt"
+    })
+
+@app.route('/debug/institutional-grants')
+def debug_institutional_grants():
+    """Get files from institutional grants folder and subfolders"""
+    if not sheets_db.initialized:
+        return jsonify({
+            "error": "Google services not connected",
+            "sheets_connected": False,
+            "mode": "slack-bolt"
+        }), 500
+    
+    files = sheets_db.get_institutional_grants_files()
+    return jsonify({
+        "folder_id": "1MDCBas01pwIeeLfhz4Nay06GqhUbRTQO",
+        "subfolders": files,
+        "total_files": sum(len(folder_files) for folder_files in files.values()),
+        "sheets_connected": True,
+        "mode": "slack-bolt"
+    })
+
+@app.route('/debug/drive-summary')
+def debug_drive_summary():
+    """Get comprehensive summary of all Drive folders"""
+    if not sheets_db.initialized:
+        return jsonify({
+            "error": "Google services not connected",
+            "sheets_connected": False,
+            "mode": "slack-bolt"
+        }), 500
+    
+    summary = sheets_db.get_drive_summary()
+    return jsonify({
+        "drive_summary": summary,
         "sheets_connected": True,
         "mode": "slack-bolt"
     })

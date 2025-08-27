@@ -559,25 +559,79 @@ class SheetsDB:
             return []
         
         try:
-            # If no folder_id provided, use the shared folder
+            # If no folder_id provided, use the donor profiles folder
             if not folder_id:
-                folder_id = "1zfT_oXgcIMSubeF3TtSNflkNvTx__dBK"  # Your shared folder
+                folder_id = "1zfT_oXgcIMSubeF3TtSNflkNvTx__dBK"  # Donor profiles folder
             
             # Query files in the folder
             query = f"'{folder_id}' in parents and trashed=false"
             results = self.drive_service.files().list(
                 q=query,
-                fields="files(id, name, mimeType, size, modifiedTime, webViewLink)"
+                fields="files(id, name, mimeType, size, modifiedTime, webViewLink, parents)"
             ).execute()
             
             files = results.get('files', [])
-            logger.info(f"✅ Found {len(files)} files in Drive folder")
+            logger.info(f"✅ Found {len(files)} files in Drive folder {folder_id}")
             
             return files
             
         except Exception as e:
             logger.error(f"❌ Error accessing Drive folder: {e}")
             return []
+    
+    def get_institutional_grants_files(self) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Get files from all institutional grants subfolders
+        
+        Returns:
+            Dict: Files organized by subfolder
+        """
+        if not self.initialized or not self.drive_service:
+            logger.error("❌ Drive service not available")
+            return {}
+        
+        try:
+            institutional_folder_id = "1MDCBas01pwIeeLfhz4Nay06GqhUbRTQO"
+            subfolders = {
+                "Templates": None,
+                "Secured Grants": None,
+                "Resources": None,
+                "Active Prospects": None,
+                "Archive": None
+            }
+            
+            # First, get all subfolders
+            query = f"'{institutional_folder_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
+            results = self.drive_service.files().list(
+                q=query,
+                fields="files(id, name)"
+            ).execute()
+            
+            folders = results.get('files', [])
+            logger.info(f"✅ Found {len(folders)} subfolders in institutional grants folder")
+            
+            # Map folder names to IDs
+            for folder in folders:
+                folder_name = folder['name']
+                if folder_name in subfolders:
+                    subfolders[folder_name] = folder['id']
+            
+            # Get files from each subfolder
+            all_files = {}
+            for folder_name, folder_id in subfolders.items():
+                if folder_id:
+                    files = self.get_drive_files(folder_id)
+                    all_files[folder_name] = files
+                    logger.info(f"📁 {folder_name}: {len(files)} files")
+                else:
+                    all_files[folder_name] = []
+                    logger.warning(f"⚠️ Subfolder '{folder_name}' not found")
+            
+            return all_files
+            
+        except Exception as e:
+            logger.error(f"❌ Error accessing institutional grants folder: {e}")
+            return {}
     
     def search_drive_files(self, query: str, folder_id: str = None) -> List[Dict[str, Any]]:
         """
@@ -644,3 +698,95 @@ class SheetsDB:
         except Exception as e:
             logger.error(f"❌ Error getting file content: {e}")
             return ""
+    
+    def search_all_drive_folders(self, query: str) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Search for files across all accessible Drive folders
+        
+        Args:
+            query (str): Search query
+            
+        Returns:
+            Dict: Search results organized by folder
+        """
+        if not self.initialized or not self.drive_service:
+            logger.error("❌ Drive service not available")
+            return {}
+        
+        try:
+            results = {
+                "donor_profiles": [],
+                "institutional_grants": {
+                    "Templates": [],
+                    "Secured Grants": [],
+                    "Resources": [],
+                    "Active Prospects": [],
+                    "Archive": []
+                }
+            }
+            
+            # Search in donor profiles folder
+            donor_files = self.search_drive_files(query, "1zfT_oXgcIMSubeF3TtSNflkNvTx__dBK")
+            results["donor_profiles"] = donor_files
+            
+            # Search in institutional grants subfolders
+            institutional_files = self.get_institutional_grants_files()
+            for folder_name, files in institutional_files.items():
+                # Filter files by query
+                matching_files = []
+                for file in files:
+                    if query.lower() in file.get('name', '').lower():
+                        matching_files.append(file)
+                results["institutional_grants"][folder_name] = matching_files
+            
+            total_matches = len(donor_files) + sum(len(files) for files in results["institutional_grants"].values())
+            logger.info(f"🔍 Found {total_matches} total matches for '{query}' across all Drive folders")
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"❌ Error searching all Drive folders: {e}")
+            return {}
+    
+    def get_drive_summary(self) -> Dict[str, Any]:
+        """
+        Get summary of all accessible Drive folders and files
+        
+        Returns:
+            Dict: Summary information
+        """
+        if not self.initialized or not self.drive_service:
+            logger.error("❌ Drive service not available")
+            return {}
+        
+        try:
+            summary = {
+                "donor_profiles": {
+                    "folder_id": "1zfT_oXgcIMSubeF3TtSNflkNvTx__dBK",
+                    "file_count": 0,
+                    "files": []
+                },
+                "institutional_grants": {
+                    "folder_id": "1MDCBas01pwIeeLfhz4Nay06GqhUbRTQO",
+                    "subfolders": {}
+                }
+            }
+            
+            # Get donor profiles summary
+            donor_files = self.get_drive_files("1zfT_oXgcIMSubeF3TtSNflkNvTx__dBK")
+            summary["donor_profiles"]["file_count"] = len(donor_files)
+            summary["donor_profiles"]["files"] = donor_files[:5]  # First 5 files as sample
+            
+            # Get institutional grants summary
+            institutional_files = self.get_institutional_grants_files()
+            for folder_name, files in institutional_files.items():
+                summary["institutional_grants"]["subfolders"][folder_name] = {
+                    "file_count": len(files),
+                    "sample_files": files[:3]  # First 3 files as sample
+                }
+            
+            return summary
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting Drive summary: {e}")
+            return {}
