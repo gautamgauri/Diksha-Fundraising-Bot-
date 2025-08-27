@@ -17,7 +17,7 @@ except ImportError:
     FUZZYWUZZY_AVAILABLE = False
     logger.warning("⚠️ fuzzywuzzy not available - using basic string matching")
 
-from google_auth import create_google_clients
+from modules.google_auth import create_google_clients
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,6 @@ class SheetsDB:
         self.drive_service = None
         self.sheet_id = None
         self.sheet_tab = None
-        self.available_tabs = []
         self.initialized = False
         self._initialize()
     
@@ -77,47 +76,25 @@ class SheetsDB:
             logger.warning(f"⚠️ Failed to initialize SheetsDB: {e} - running in offline mode")
     
     def _test_sheet_access(self):
-        """Test access to the Google Sheet and discover all tabs"""
+        """Test access to the Google Sheet"""
         try:
-            # First, get all sheet metadata to discover tabs
-            sheet_metadata = self.sheets_service.spreadsheets().get(
-                spreadsheetId=self.sheet_id
+            # Try to read the first row to verify access
+            range_name = f"{self.sheet_tab}!A1:M1"
+            result = self.sheets_service.spreadsheets().values().get(
+                spreadsheetId=self.sheet_id,
+                range=range_name
             ).execute()
             
-            # Extract all tab names
-            self.available_tabs = []
-            for sheet in sheet_metadata.get('sheets', []):
-                tab_name = sheet['properties']['title']
-                self.available_tabs.append(tab_name)
-            
-            logger.info(f"✅ Successfully connected to spreadsheet")
-            logger.info(f"📋 Available tabs: {self.available_tabs}")
-            
-            # Test access to the main tab
-            if self.sheet_tab in self.available_tabs:
-                range_name = f"{self.sheet_tab}!A1:M1"
-                result = self.sheets_service.spreadsheets().values().get(
-                    spreadsheetId=self.sheet_id,
-                    range=range_name
-                ).execute()
-                
-                headers = result.get('values', [[]])[0]
-                logger.info(f"✅ Successfully accessed main tab: {self.sheet_tab}")
-                logger.info(f"📋 Headers found: {headers}")
-                self.initialized = True
-            else:
-                logger.warning(f"⚠️ Main tab '{self.sheet_tab}' not found. Available tabs: {self.available_tabs}")
-                # Use the first available tab as fallback
-                if self.available_tabs:
-                    self.sheet_tab = self.available_tabs[0]
-                    logger.info(f"🔄 Using first available tab as fallback: {self.sheet_tab}")
-                    self.initialized = True
+            headers = result.get('values', [[]])[0]
+            logger.info(f"✅ Successfully connected to sheet: {self.sheet_tab}")
+            logger.info(f"📋 Headers found: {headers}")
+            self.initialized = True
             
         except HttpError as e:
             if e.resp.status == 404:
-                logger.error(f"❌ Spreadsheet not found or no access")
+                logger.error(f"❌ Sheet '{self.sheet_tab}' not found in spreadsheet")
             else:
-                logger.error(f"❌ Failed to access spreadsheet: {e}")
+                logger.error(f"❌ Failed to access sheet: {e}")
         except Exception as e:
             logger.error(f"❌ Error testing sheet access: {e}")
     
@@ -376,170 +353,3 @@ class SheetsDB:
         """
         pipeline = self.get_pipeline()
         return pipeline.get(stage, [])
-    
-    def get_all_tabs(self) -> List[str]:
-        """
-        Get list of all available tabs in the spreadsheet
-        
-        Returns:
-            List[str]: List of tab names
-        """
-        return self.available_tabs.copy()
-    
-    def get_tab_data(self, tab_name: str) -> List[List[str]]:
-        """
-        Get all data from a specific tab
-        
-        Args:
-            tab_name (str): Name of the tab to read
-            
-        Returns:
-            List[List[str]]: Raw data from the tab
-        """
-        if not self.initialized:
-            logger.error("❌ SheetsDB not initialized")
-            return []
-        
-        if tab_name not in self.available_tabs:
-            logger.error(f"❌ Tab '{tab_name}' not found. Available tabs: {self.available_tabs}")
-            return []
-        
-        try:
-            # Read all data from the specified tab
-            range_name = f"{tab_name}!A:Z"  # Read more columns to be safe
-            result = self.sheets_service.spreadsheets().values().get(
-                spreadsheetId=self.sheet_id,
-                range=range_name
-            ).execute()
-            
-            values = result.get('values', [])
-            logger.info(f"✅ Retrieved {len(values)} rows from tab '{tab_name}'")
-            return values
-            
-        except HttpError as e:
-            logger.error(f"❌ HTTP error reading tab '{tab_name}': {e}")
-            return []
-        except Exception as e:
-            logger.error(f"❌ Error reading tab '{tab_name}': {e}")
-            return []
-    
-    def search_across_all_tabs(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """
-        Search for organizations across all tabs
-        
-        Args:
-            query (str): Search query
-            limit (int): Maximum number of results to return
-            
-        Returns:
-            List[Dict]: Matching organizations with tab information
-        """
-        if not self.initialized:
-            logger.error("❌ SheetsDB not initialized")
-            return []
-        
-        all_matches = []
-        query_lower = query.lower()
-        
-        for tab_name in self.available_tabs:
-            try:
-                # Get data from this tab
-                tab_data = self.get_tab_data(tab_name)
-                if not tab_data:
-                    continue
-                
-                # Skip header row
-                data_rows = tab_data[1:] if len(tab_data) > 1 else []
-                
-                # Search in organization names (assuming column A)
-                for row in data_rows:
-                    if not row or len(row) == 0:
-                        continue
-                    
-                    org_name = row[0] if len(row) > 0 else ""
-                    if not org_name:
-                        continue
-                    
-                    # Check for matches
-                    exact_match = query_lower in org_name.lower()
-                    
-                    if FUZZYWUZZY_AVAILABLE:
-                        fuzzy_score = fuzz.partial_ratio(query_lower, org_name.lower())
-                        if exact_match or fuzzy_score > 60:
-                            all_matches.append({
-                                'organization_name': org_name,
-                                'tab_name': tab_name,
-                                'similarity_score': fuzzy_score,
-                                'exact_match': exact_match,
-                                'row_data': row
-                            })
-                    else:
-                        if exact_match:
-                            all_matches.append({
-                                'organization_name': org_name,
-                                'tab_name': tab_name,
-                                'similarity_score': 100,
-                                'exact_match': True,
-                                'row_data': row
-                            })
-                            
-            except Exception as e:
-                logger.error(f"❌ Error searching in tab '{tab_name}': {e}")
-                continue
-        
-        # Sort by relevance (exact matches first, then by fuzzy score)
-        all_matches.sort(key=lambda x: (not x['exact_match'], -x['similarity_score']))
-        
-        # Return top matches
-        result = all_matches[:limit]
-        logger.info(f"🔍 Found {len(result)} matches across all tabs for query '{query}'")
-        return result
-    
-    def get_tab_summary(self) -> Dict[str, Dict[str, Any]]:
-        """
-        Get summary information for all tabs
-        
-        Returns:
-            Dict: Summary information for each tab
-        """
-        if not self.initialized:
-            logger.error("❌ SheetsDB not initialized")
-            return {}
-        
-        summary = {}
-        
-        for tab_name in self.available_tabs:
-            try:
-                tab_data = self.get_tab_data(tab_name)
-                if not tab_data:
-                    summary[tab_name] = {
-                        'row_count': 0,
-                        'column_count': 0,
-                        'has_headers': False,
-                        'status': 'empty'
-                    }
-                    continue
-                
-                row_count = len(tab_data)
-                column_count = len(tab_data[0]) if tab_data else 0
-                has_headers = row_count > 1
-                
-                summary[tab_name] = {
-                    'row_count': row_count,
-                    'column_count': column_count,
-                    'has_headers': has_headers,
-                    'status': 'active',
-                    'headers': tab_data[0] if has_headers else []
-                }
-                
-            except Exception as e:
-                logger.error(f"❌ Error getting summary for tab '{tab_name}': {e}")
-                summary[tab_name] = {
-                    'row_count': 0,
-                    'column_count': 0,
-                    'has_headers': False,
-                    'status': 'error',
-                    'error': str(e)
-                }
-        
-        return summary

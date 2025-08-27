@@ -179,20 +179,39 @@ if slack_app:
 @app.route('/')
 def index():
     logger.info("📊 Root endpoint accessed")
+    
+    # Get tab information if connected
+    tab_info = {}
+    if sheets_db.initialized:
+        tab_info = {
+            "connected": True,
+            "sheet_id": sheets_db.sheet_id,
+            "main_tab": sheets_db.sheet_tab,
+            "available_tabs": sheets_db.get_all_tabs(),
+            "total_tabs": len(sheets_db.get_all_tabs())
+        }
+    else:
+        tab_info = {
+            "connected": False,
+            "sheet_id": None,
+            "main_tab": None,
+            "available_tabs": [],
+            "total_tabs": 0
+        }
+    
     return jsonify({
         "app": "Diksha Fundraising Automation", 
         "status": "running", 
         "mode": "slack-bolt",
-        "google_sheets": {
-            "connected": sheets_db.initialized,
-            "sheet_id": sheets_db.sheet_id if sheets_db.initialized else None,
-            "sheet_tab": sheets_db.sheet_tab if sheets_db.initialized else None
-        },
+        "google_sheets": tab_info,
         "endpoints": {
             "slack_events": "/slack/events",
             "health": "/health",
             "sheets_test": "/debug/sheets-test",
-            "search": "/debug/search?q=<query>"
+            "search": "/debug/search?q=<query>",
+            "search_all_tabs": "/debug/search-all-tabs?q=<query>",
+            "tabs_info": "/debug/tabs",
+            "tab_data": "/debug/tab-data?tab=<tab_name>"
         }
     })
 
@@ -394,6 +413,78 @@ def debug_search():
         "matches": [{"name": m['organization_name'], "stage": m['current_stage'], "score": m.get('similarity_score', 0)} for m in matches],
         "count": len(matches),
         "sheets_connected": sheets_db.initialized,
+        "mode": "slack-bolt"
+    })
+
+@app.route('/debug/tabs')
+def debug_tabs():
+    """Get information about all tabs in the spreadsheet"""
+    if not sheets_db.initialized:
+        return jsonify({
+            "error": "Google Sheets not connected",
+            "sheets_connected": False,
+            "mode": "slack-bolt"
+        }), 500
+    
+    tabs = sheets_db.get_all_tabs()
+    summary = sheets_db.get_tab_summary()
+    
+    return jsonify({
+        "available_tabs": tabs,
+        "tab_summary": summary,
+        "main_tab": sheets_db.sheet_tab,
+        "sheets_connected": True,
+        "mode": "slack-bolt"
+    })
+
+@app.route('/debug/search-all-tabs')
+def debug_search_all_tabs():
+    """Search organizations across all tabs"""
+    query = (request.args.get('q') or '').strip()
+    if not query:
+        return jsonify({"error": "Missing query parameter 'q'"}), 400
+    
+    if not sheets_db.initialized:
+        return jsonify({
+            "error": "Google Sheets not connected",
+            "sheets_connected": False,
+            "mode": "slack-bolt"
+        }), 500
+    
+    matches = sheets_db.search_across_all_tabs(query)
+    return jsonify({
+        "query": query,
+        "matches": [{
+            "name": m['organization_name'], 
+            "tab": m['tab_name'], 
+            "score": m.get('similarity_score', 0),
+            "exact_match": m.get('exact_match', False)
+        } for m in matches],
+        "count": len(matches),
+        "sheets_connected": True,
+        "mode": "slack-bolt"
+    })
+
+@app.route('/debug/tab-data')
+def debug_tab_data():
+    """Get data from a specific tab"""
+    tab_name = (request.args.get('tab') or '').strip()
+    if not tab_name:
+        return jsonify({"error": "Missing query parameter 'tab'"}), 400
+    
+    if not sheets_db.initialized:
+        return jsonify({
+            "error": "Google Sheets not connected",
+            "sheets_connected": False,
+            "mode": "slack-bolt"
+        }), 500
+    
+    tab_data = sheets_db.get_tab_data(tab_name)
+    return jsonify({
+        "tab_name": tab_name,
+        "row_count": len(tab_data),
+        "data": tab_data[:10] if tab_data else [],  # Return first 10 rows for preview
+        "sheets_connected": True,
         "mode": "slack-bolt"
     })
 
