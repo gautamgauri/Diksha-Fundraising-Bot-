@@ -7,8 +7,15 @@ import os
 import logging
 from typing import Dict, List, Optional, Any
 from datetime import datetime
-from fuzzywuzzy import fuzz
 from googleapiclient.errors import HttpError
+
+# Optional import for fuzzy matching
+try:
+    from fuzzywuzzy import fuzz
+    FUZZYWUZZY_AVAILABLE = True
+except ImportError:
+    FUZZYWUZZY_AVAILABLE = False
+    logger.warning("⚠️ fuzzywuzzy not available - using basic string matching")
 
 from .google_auth import create_google_clients
 
@@ -53,20 +60,20 @@ class SheetsDB:
             self.sheet_tab = os.environ.get('MAIN_SHEET_TAB', 'Pipeline Tracker')
             
             if not self.sheet_id:
-                logger.error("❌ MAIN_SHEET_ID environment variable not set")
+                logger.warning("⚠️ MAIN_SHEET_ID environment variable not set - running in offline mode")
                 return
             
             # Create Google API clients
             self.sheets_service, self.drive_service = create_google_clients()
             if not self.sheets_service or not self.drive_service:
-                logger.error("❌ Failed to create Google API clients")
+                logger.warning("⚠️ Failed to create Google API clients - running in offline mode")
                 return
             
             # Test connection by reading the sheet
             self._test_sheet_access()
             
         except Exception as e:
-            logger.error(f"❌ Failed to initialize SheetsDB: {e}")
+            logger.warning(f"⚠️ Failed to initialize SheetsDB: {e} - running in offline mode")
     
     def _test_sheet_access(self):
         """Test access to the Google Sheet"""
@@ -189,14 +196,24 @@ class SheetsDB:
                 
                 # Calculate similarity scores
                 exact_match = query_lower in org_name.lower()
-                fuzzy_score = fuzz.partial_ratio(query_lower, org_name.lower())
                 
-                if exact_match or fuzzy_score > 60:  # Threshold for fuzzy matching
-                    matches.append({
-                        **org,
-                        'similarity_score': fuzzy_score,
-                        'exact_match': exact_match
-                    })
+                if FUZZYWUZZY_AVAILABLE:
+                    fuzzy_score = fuzz.partial_ratio(query_lower, org_name.lower())
+                    if exact_match or fuzzy_score > 60:  # Threshold for fuzzy matching
+                        matches.append({
+                            **org,
+                            'similarity_score': fuzzy_score,
+                            'exact_match': exact_match
+                        })
+                else:
+                    # Basic string matching fallback
+                    fuzzy_score = 100 if exact_match else 0
+                    if exact_match:
+                        matches.append({
+                            **org,
+                            'similarity_score': fuzzy_score,
+                            'exact_match': exact_match
+                        })
             
             # Sort by relevance (exact matches first, then by fuzzy score)
             matches.sort(key=lambda x: (not x['exact_match'], -x['similarity_score']))
