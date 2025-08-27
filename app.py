@@ -213,7 +213,10 @@ def index():
             "search": "/debug/search?q=<query>",
             "search_all_tabs": "/debug/search-all-tabs?q=<query>",
             "tabs_info": "/debug/tabs",
-            "tab_data": "/debug/tab-data?tab=<tab_name>"
+            "tab_data": "/debug/tab-data?tab=<tab_name>",
+            "drive_files": "/debug/drive-files",
+            "search_drive": "/debug/search-drive?q=<query>",
+            "comprehensive_search": "/debug/comprehensive-search?q=<query>"
         }
     })
 
@@ -486,6 +489,92 @@ def debug_tab_data():
         "tab_name": tab_name,
         "row_count": len(tab_data),
         "data": tab_data[:10] if tab_data else [],  # Return first 10 rows for preview
+        "sheets_connected": True,
+        "mode": "slack-bolt"
+    })
+
+@app.route('/debug/drive-files')
+def debug_drive_files():
+    """Get files from Google Drive donor profiles folder"""
+    if not sheets_db.initialized:
+        return jsonify({
+            "error": "Google services not connected",
+            "sheets_connected": False,
+            "mode": "slack-bolt"
+        }), 500
+    
+    files = sheets_db.get_drive_files()
+    return jsonify({
+        "folder_id": "1zfT_oXgcIMSubeF3TtSNflkNvTx__dBK",
+        "file_count": len(files),
+        "files": files,
+        "sheets_connected": True,
+        "mode": "slack-bolt"
+    })
+
+@app.route('/debug/search-drive')
+def debug_search_drive():
+    """Search for files in Google Drive folder"""
+    query = (request.args.get('q') or '').strip()
+    if not query:
+        return jsonify({"error": "Missing query parameter 'q'"}), 400
+    
+    if not sheets_db.initialized:
+        return jsonify({
+            "error": "Google services not connected",
+            "sheets_connected": False,
+            "mode": "slack-bolt"
+        }), 500
+    
+    files = sheets_db.search_drive_files(query)
+    return jsonify({
+        "query": query,
+        "file_count": len(files),
+        "files": files,
+        "sheets_connected": True,
+        "mode": "slack-bolt"
+    })
+
+@app.route('/debug/comprehensive-search')
+def debug_comprehensive_search():
+    """Search across both Google Sheets and Google Drive"""
+    query = (request.args.get('q') or '').strip()
+    if not query:
+        return jsonify({"error": "Missing query parameter 'q'"}), 400
+    
+    if not sheets_db.initialized:
+        return jsonify({
+            "error": "Google services not connected",
+            "sheets_connected": False,
+            "mode": "slack-bolt"
+        }), 500
+    
+    # Search in sheets
+    sheet_matches = sheets_db.search_across_all_tabs(query)
+    
+    # Search in drive
+    drive_files = sheets_db.search_drive_files(query)
+    
+    return jsonify({
+        "query": query,
+        "sheets_results": {
+            "count": len(sheet_matches),
+            "matches": [{
+                "name": m['organization_name'], 
+                "tab": m['tab_name'], 
+                "score": m.get('similarity_score', 0)
+            } for m in sheet_matches]
+        },
+        "drive_results": {
+            "count": len(drive_files),
+            "files": [{
+                "name": f['name'],
+                "id": f['id'],
+                "type": f['mimeType'],
+                "link": f['webViewLink']
+            } for f in drive_files]
+        },
+        "total_results": len(sheet_matches) + len(drive_files),
         "sheets_connected": True,
         "mode": "slack-bolt"
     })

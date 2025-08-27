@@ -543,3 +543,104 @@ class SheetsDB:
                 }
         
         return summary
+    
+    def get_drive_files(self, folder_id: str = None) -> List[Dict[str, Any]]:
+        """
+        Get files from Google Drive folder
+        
+        Args:
+            folder_id (str): Google Drive folder ID (optional)
+            
+        Returns:
+            List[Dict]: List of files with metadata
+        """
+        if not self.initialized or not self.drive_service:
+            logger.error("❌ Drive service not available")
+            return []
+        
+        try:
+            # If no folder_id provided, use the shared folder
+            if not folder_id:
+                folder_id = "1zfT_oXgcIMSubeF3TtSNflkNvTx__dBK"  # Your shared folder
+            
+            # Query files in the folder
+            query = f"'{folder_id}' in parents and trashed=false"
+            results = self.drive_service.files().list(
+                q=query,
+                fields="files(id, name, mimeType, size, modifiedTime, webViewLink)"
+            ).execute()
+            
+            files = results.get('files', [])
+            logger.info(f"✅ Found {len(files)} files in Drive folder")
+            
+            return files
+            
+        except Exception as e:
+            logger.error(f"❌ Error accessing Drive folder: {e}")
+            return []
+    
+    def search_drive_files(self, query: str, folder_id: str = None) -> List[Dict[str, Any]]:
+        """
+        Search for files in Google Drive folder by name
+        
+        Args:
+            query (str): Search query
+            folder_id (str): Google Drive folder ID (optional)
+            
+        Returns:
+            List[Dict]: Matching files
+        """
+        if not self.initialized or not self.drive_service:
+            logger.error("❌ Drive service not available")
+            return []
+        
+        try:
+            # If no folder_id provided, use the shared folder
+            if not folder_id:
+                folder_id = "1zfT_oXgcIMSubeF3TtSNflkNvTx__dBK"  # Your shared folder
+            
+            # Search for files containing the query in name
+            search_query = f"'{folder_id}' in parents and name contains '{query}' and trashed=false"
+            results = self.drive_service.files().list(
+                q=search_query,
+                fields="files(id, name, mimeType, size, modifiedTime, webViewLink)"
+            ).execute()
+            
+            files = results.get('files', [])
+            logger.info(f"🔍 Found {len(files)} files matching '{query}' in Drive folder")
+            
+            return files
+            
+        except Exception as e:
+            logger.error(f"❌ Error searching Drive files: {e}")
+            return []
+    
+    def get_file_content(self, file_id: str) -> str:
+        """
+        Get text content from a Google Drive file (for text-based files)
+        
+        Args:
+            file_id (str): Google Drive file ID
+            
+        Returns:
+            str: File content as text
+        """
+        if not self.initialized or not self.drive_service:
+            logger.error("❌ Drive service not available")
+            return ""
+        
+        try:
+            # Get file metadata first
+            file_metadata = self.drive_service.files().get(fileId=file_id).execute()
+            mime_type = file_metadata.get('mimeType', '')
+            
+            # Only process text-based files
+            if 'text/' in mime_type or 'application/pdf' in mime_type:
+                # For now, return file info - full content extraction would need additional libraries
+                return f"File: {file_metadata.get('name', 'Unknown')} (Type: {mime_type})"
+            else:
+                return f"File: {file_metadata.get('name', 'Unknown')} (Binary file - content not extractable)"
+                
+        except Exception as e:
+            logger.error(f"❌ Error getting file content: {e}")
+            return ""
