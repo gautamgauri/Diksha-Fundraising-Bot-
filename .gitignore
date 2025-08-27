@@ -49,3 +49,9 @@ logs/
 
 # Railway
 .railway/
+
+# Google Sheets credentials
+*.json
+!package.json
+!railway.json
+

@@ -1,6 +1,5 @@
 from flask import Flask, request, jsonify
 import os
-import json
 import logging
 from datetime import datetime
 from typing import Dict, Any, Optional, Tuple
@@ -9,11 +8,20 @@ from typing import Dict, Any, Optional, Tuple
 from slack_bolt import App as SlackApp
 from slack_bolt.adapter.flask import SlackRequestHandler
 
+# Google Sheets integration
+from app.modules.sheets_sync import SheetsDB
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+############################
+# Google Sheets Database
+############################
+# Initialize Google Sheets database
+sheets_db = SheetsDB()
 
 ############################
 # Slack App Configuration
@@ -49,7 +57,7 @@ if slack_app:
         text = (command.get("text", "") or "").strip()
     
         if not text:
-            respond("🎯 *Diksha Fundraising Bot*\n\nUsage:\n• `/pipeline status <org>` - Check organization status\n• `/pipeline assign <org> <email>` - Assign to team member\n• `/pipeline next <org> | <action> | <YYYY-MM-DD>` - Set next action\n• `/pipeline stage <org> | <stage>` - Update pipeline stage\n\n*Note: Google Sheets integration disabled for testing*")
+            respond("🎯 *Diksha Fundraising Bot*\n\nUsage:\n• `/pipeline status <org>` - Check organization status\n• `/pipeline assign <org> <email>` - Assign to team member\n• `/pipeline next <org> | <action> | <YYYY-MM-DD>` - Set next action\n• `/pipeline stage <org> | <stage>` - Update pipeline stage\n• `/pipeline search <query>` - Search organizations\n\n*Connected to live Google Sheets data*")
             return
 
         parts = text.split()
@@ -63,7 +71,18 @@ if slack_app:
                     respond("Usage: /pipeline status <organization>")
                     return
                 org_query = " ".join(args)
-                respond(f"🏢 *{org_query}*\n📊 Stage: Identified\n👤 Assigned: team@dikshafoundation.org\n📅 Next: Initial outreach on 2025-07-15\n\n*Note: This is test data - Google Sheets integration disabled*")
+                
+                # Get data from Google Sheets
+                org_data = sheets_db.get_org_by_name(org_query)
+                if org_data:
+                    respond(f"🏢 *{org_data['organization_name']}*\n📊 Stage: {org_data['current_stage']}\n👤 Assigned: {org_data['assigned_to']}\n📅 Next: {org_data['next_action']} on {org_data['next_action_date']}\n📧 Email: {org_data['email']}\n📞 Phone: {org_data['phone']}\n👥 Contact: {org_data['contact_person']}\n🏷️ Sector: {org_data['sector_tags']}\n🌍 Geography: {org_data['geography']}\n📝 Notes: {org_data['notes']}")
+                else:
+                    # Try to find similar organizations
+                    matches = sheets_db.find_org(org_query)
+                    if matches:
+                        respond(f"❌ Organization '{org_query}' not found. Similar organizations:\n" + "\n".join([f"• {match['organization_name']}" for match in matches]))
+                    else:
+                        respond(f"❌ Organization '{org_query}' not found in pipeline.")
                 return
 
             if action == "assign":
@@ -73,7 +92,12 @@ if slack_app:
                     return
                 org_query = " ".join(args[:-1])
                 email = args[-1]
-                respond(f"✅ Assigned *{org_query}* to {email}\n\n*Note: This is test data - Google Sheets integration disabled*")
+                
+                # Update in Google Sheets
+                if sheets_db.update_org_field(org_query, 'assigned_to', email):
+                    respond(f"✅ Assigned *{org_query}* to {email}")
+                else:
+                    respond(f"❌ Failed to assign {org_query}. Organization not found or update failed.")
                 return
 
             if action == "next":
@@ -84,7 +108,15 @@ if slack_app:
                     respond("Usage: /pipeline next <org> | <action> | <YYYY-MM-DD>")
                     return
                 org_query, action_text, due_date = parts2[0], parts2[1], parts2[2]
-                respond(f"📅 Updated next action for *{org_query}*:\n• Action: {action_text}\n• Due: {due_date}\n\n*Note: This is test data - Google Sheets integration disabled*")
+                
+                # Update both next_action and next_action_date
+                success1 = sheets_db.update_org_field(org_query, 'next_action', action_text)
+                success2 = sheets_db.update_org_field(org_query, 'next_action_date', due_date)
+                
+                if success1 and success2:
+                    respond(f"📅 Updated next action for *{org_query}*:\n• Action: {action_text}\n• Due: {due_date}")
+                else:
+                    respond(f"❌ Failed to update next action for {org_query}. Organization not found or update failed.")
                 return
 
             if action == "stage":
@@ -95,11 +127,35 @@ if slack_app:
                     respond("Usage: /pipeline stage <org> | <stage>")
                     return
                 org_query, new_stage = parts2[0], parts2[1]
-                respond(f"🔄 Stage updated for *{org_query}*:\n• From: Identified\n• To: {new_stage}\n\n*Note: This is test data - Google Sheets integration disabled*")
+                
+                # Get current stage first
+                org_data = sheets_db.get_org_by_name(org_query)
+                if org_data:
+                    old_stage = org_data['current_stage']
+                    if sheets_db.update_org_field(org_query, 'current_stage', new_stage):
+                        respond(f"🔄 Stage updated for *{org_query}*:\n• From: {old_stage}\n• To: {new_stage}")
+                    else:
+                        respond(f"❌ Failed to update stage for {org_query}.")
+                else:
+                    respond(f"❌ Organization '{org_query}' not found in pipeline.")
                 return
 
-            respond("Unknown action. Use one of: status, assign, next, stage")
+            if action == "search":
+                # /pipeline search <query>
+                if not args:
+                    respond("Usage: /pipeline search <query>")
+                    return
+                query = " ".join(args)
+                matches = sheets_db.find_org(query)
+                if matches:
+                    respond(f"🔍 Organizations matching '{query}':\n" + "\n".join([f"• {match['organization_name']} ({match['current_stage']})" for match in matches]))
+                else:
+                    respond(f"🔍 No organizations found matching '{query}'")
+                return
+
+            respond("Unknown action. Use one of: status, assign, next, stage, search")
         except Exception as e:
+            logger.error(f"Error in pipeline command: {e}")
             respond(f"Error: {e}")
 
 ############################
@@ -127,9 +183,16 @@ def index():
         "app": "Diksha Fundraising Automation", 
         "status": "running", 
         "mode": "slack-bolt",
+        "google_sheets": {
+            "connected": sheets_db.initialized,
+            "sheet_id": sheets_db.sheet_id if sheets_db.initialized else None,
+            "sheet_tab": sheets_db.sheet_tab if sheets_db.initialized else None
+        },
         "endpoints": {
             "slack_events": "/slack/events",
-            "health": "/health"
+            "health": "/health",
+            "sheets_test": "/debug/sheets-test",
+            "search": "/debug/search?q=<query>"
         }
     })
 
@@ -165,14 +228,32 @@ def debug_status():
     org = (request.args.get('org') or '').strip()
     if not org:
         return jsonify({"error": "Missing query param 'org'"}), 400
-    return jsonify({
-        "organization": org,
-        "stage": "Identified (test mode)",
-        "assigned_to": "team@dikshafoundation.org",
-        "next_action": "Initial outreach",
-        "next_action_date": "2025-07-15",
-        "mode": "slack-bolt"
-    })
+    
+    # Get data from Google Sheets
+    org_data = sheets_db.get_org_by_name(org)
+    if org_data:
+        return jsonify({
+            "organization": org_data['organization_name'],
+            "stage": org_data['current_stage'],
+            "assigned_to": org_data['assigned_to'],
+            "next_action": org_data['next_action'],
+            "next_action_date": org_data['next_action_date'],
+            "email": org_data['email'],
+            "phone": org_data['phone'],
+            "contact_person": org_data['contact_person'],
+            "sector_tags": org_data['sector_tags'],
+            "geography": org_data['geography'],
+            "notes": org_data['notes'],
+            "last_updated": org_data['last_updated'],
+            "mode": "slack-bolt",
+            "sheets_connected": True
+        })
+    else:
+        return jsonify({
+            "error": f"Organization '{org}' not found",
+            "mode": "slack-bolt",
+            "sheets_connected": sheets_db.initialized
+        }), 404
 
 @app.route('/debug/assign', methods=['POST'])
 def debug_assign():
@@ -181,7 +262,22 @@ def debug_assign():
     email = (data.get('email') or '').strip()
     if not org or not email:
         return jsonify({"error": "Body must include 'org' and 'email'"}), 400
-    return jsonify({"ok": True, "organization": org, "assigned_to": email, "mode": "slack-bolt"})
+    
+    # Update in Google Sheets
+    if sheets_db.update_org_field(org, 'assigned_to', email):
+        return jsonify({
+            "ok": True, 
+            "organization": org, 
+            "assigned_to": email, 
+            "mode": "slack-bolt",
+            "sheets_connected": True
+        })
+    else:
+        return jsonify({
+            "error": f"Failed to assign {org} to {email}. Organization not found or update failed.",
+            "mode": "slack-bolt",
+            "sheets_connected": sheets_db.initialized
+        }), 404
 
 @app.route('/debug/next', methods=['POST'])
 def debug_next():
@@ -191,7 +287,26 @@ def debug_next():
     due_date = (data.get('date') or '').strip()
     if not org or not action_text or not due_date:
         return jsonify({"error": "Body must include 'org', 'action', 'date' (YYYY-MM-DD)"}), 400
-    return jsonify({"ok": True, "organization": org, "next_action": action_text, "next_action_date": due_date, "mode": "slack-bolt"})
+    
+    # Update both next_action and next_action_date in Google Sheets
+    success1 = sheets_db.update_org_field(org, 'next_action', action_text)
+    success2 = sheets_db.update_org_field(org, 'next_action_date', due_date)
+    
+    if success1 and success2:
+        return jsonify({
+            "ok": True, 
+            "organization": org, 
+            "next_action": action_text, 
+            "next_action_date": due_date, 
+            "mode": "slack-bolt",
+            "sheets_connected": True
+        })
+    else:
+        return jsonify({
+            "error": f"Failed to update next action for {org}. Organization not found or update failed.",
+            "mode": "slack-bolt",
+            "sheets_connected": sheets_db.initialized
+        }), 404
 
 @app.route('/debug/stage', methods=['POST'])
 def debug_stage():
@@ -200,7 +315,87 @@ def debug_stage():
     new_stage = (data.get('stage') or '').strip()
     if not org or not new_stage:
         return jsonify({"error": "Body must include 'org' and 'stage'"}), 400
-    return jsonify({"ok": True, "organization": org, "from": "Identified", "to": new_stage, "mode": "slack-bolt"})
+    
+    # Get current stage first
+    org_data = sheets_db.get_org_by_name(org)
+    if org_data:
+        old_stage = org_data['current_stage']
+        if sheets_db.update_org_field(org, 'current_stage', new_stage):
+            return jsonify({
+                "ok": True, 
+                "organization": org, 
+                "from": old_stage, 
+                "to": new_stage, 
+                "mode": "slack-bolt",
+                "sheets_connected": True
+            })
+        else:
+            return jsonify({
+                "error": f"Failed to update stage for {org}.",
+                "mode": "slack-bolt",
+                "sheets_connected": sheets_db.initialized
+            }), 500
+    else:
+        return jsonify({
+            "error": f"Organization '{org}' not found in pipeline.",
+            "mode": "slack-bolt",
+            "sheets_connected": sheets_db.initialized
+        }), 404
+
+@app.route('/debug/sheets-test')
+def debug_sheets_test():
+    """Test Google Sheets connection and get sample data"""
+    try:
+        if not sheets_db.initialized:
+            return jsonify({
+                "error": "Google Sheets not connected",
+                "sheets_connected": False,
+                "mode": "slack-bolt"
+            }), 500
+        
+        # Get pipeline data to test connection
+        pipeline = sheets_db.get_pipeline()
+        sample_orgs = []
+        total_orgs = 0
+        
+        for stage, orgs in pipeline.items():
+            total_orgs += len(orgs)
+            if len(sample_orgs) < 5:
+                sample_orgs.extend([org['organization_name'] for org in orgs[:5-len(sample_orgs)]])
+        
+        return jsonify({
+            "sheets_connected": True,
+            "sheet_id": sheets_db.sheet_id,
+            "sheet_tab": sheets_db.sheet_tab,
+            "sample_organizations": sample_orgs,
+            "total_organizations": total_orgs,
+            "stages": list(pipeline.keys()),
+            "mode": "slack-bolt"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error testing Google Sheets: {e}")
+        return jsonify({
+            "error": f"Google Sheets test failed: {e}",
+            "sheets_connected": False,
+            "mode": "slack-bolt"
+        }), 500
+
+@app.route('/debug/search')
+def debug_search():
+    """Search organizations via API"""
+    query = (request.args.get('q') or '').strip()
+    if not query:
+        return jsonify({"error": "Missing query parameter 'q'"}), 400
+    
+    matches = sheets_db.find_org(query)
+    return jsonify({
+        "query": query,
+        "matches": [{"name": m['organization_name'], "stage": m['current_stage'], "score": m.get('similarity_score', 0)} for m in matches],
+        "count": len(matches),
+        "sheets_connected": sheets_db.initialized,
+        "mode": "slack-bolt"
+    })
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 3000))
