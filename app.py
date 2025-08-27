@@ -11,6 +11,8 @@ from slack_bolt.adapter.flask import SlackRequestHandler
 # Google Sheets integration
 from sheets_sync import SheetsDB
 
+# Force redeploy - Google Sheets linked and ready for multi-tab access
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
