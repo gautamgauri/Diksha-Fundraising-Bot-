@@ -27,7 +27,7 @@ from cache_manager import cache_manager
 logger = logging.getLogger(__name__)
 
 def retry_on_failure(max_retries=None, delay=None):
-    """Retry decorator with exponential backoff"""
+    """Retry decorator with exponential backof"""
     max_retries = max_retries or EMAIL_CONFIG['max_retries']
     delay = delay or EMAIL_CONFIG['retry_delay']
     
@@ -364,7 +364,7 @@ class RateLimiter:
         # Get donor profile from Google Drive
         donor_profile = self._get_donor_profile_from_drive(donor_data.get('organization_name', ''))
         
-        context = f"""
+        context = """
         You are a fundraising expert at Diksha Foundation. Your task is to ENHANCE an existing email template by making it more personalized, engaging, and professional.
         
         ORGANIZATION CONTEXT (from Google Sheets):
@@ -381,7 +381,7 @@ class RateLimiter:
         
         # Add Google Drive profile context if available
         if donor_profile:
-            context += f"""
+            context += """
         
         DONOR PROFILE (from Google Drive):
         - Profile File: {donor_profile['file_name']}
@@ -392,13 +392,13 @@ class RateLimiter:
         Use this profile information to make the email more personalized and relevant to their specific mission and programs.
         """
         else:
-            context += f"""
+            context += """
         
         DONOR PROFILE: No detailed profile found in Google Drive
         Use the available Google Sheets data for personalization.
         """
         
-        context += f"""
+        context += """
         
         DIKSHA FOUNDATION ACHIEVEMENTS:
         - {DIKSHA_INFO['youth_trained']} youth trained in digital literacy
@@ -592,7 +592,7 @@ class RateLimiter:
         templates = {
             "identification": {
                 "subject": "Partnership Opportunity with Diksha Foundation - Digital Skills Training",
-                "body": f"""Dear {{{{contact_person}}}},
+                "body": """Dear {{{{contact_person}}}},
 
 I hope this message finds you well. I'm reaching out from Diksha Foundation, where we've been transforming lives through digital skills training and youth empowerment in Bihar since 2010.
 
@@ -612,7 +612,7 @@ Team Diksha Foundation"""
             },
             "intro": {
                 "subject": "First Introduction to Diksha Foundation - Digital Skills Training",
-                "body": f"""Dear {{{{contact_person}}}},
+                "body": """Dear {{{{contact_person}}}},
 
 I hope this message finds you well. I'm {{{{contact_person}}}} from Diksha Foundation, and I wanted to introduce myself and our work.
 
@@ -632,7 +632,7 @@ Best regards,
             },
             "concept": {
                 "subject": "A Concise Concept Pitch for Diksha Foundation",
-                "body": f"""Dear {{{{contact_person}}}},
+                "body": """Dear {{{{contact_person}}}},
 
 I hope this message finds you well. I'm {{{{contact_person}}}} from Diksha Foundation, and I wanted to share a concise concept pitch for our work.
 
@@ -654,7 +654,7 @@ Best regards,
             },
             "engagement": {
                 "subject": "Deepening Our Partnership Discussion - Diksha Foundation",
-                "body": f"""Dear {{{{contact_person}}}},
+                "body": """Dear {{{{contact_person}}}},
 
 Thank you for your initial interest in our work at Diksha Foundation. I'm excited to explore how we can deepen our potential partnership.
 
@@ -675,7 +675,7 @@ Team Diksha Foundation"""
             },
             "meeting_request": {
                 "subject": "Request for a Meeting/Call with Diksha Foundation",
-                "body": f"""Dear {{{{contact_person}}}},
+                "body": """Dear {{{{contact_person}}}},
 
 I hope this message finds you well. I'm {{{{contact_person}}}} from Diksha Foundation, and I'd like to request a meeting or call to discuss potential collaboration.
 
@@ -690,7 +690,7 @@ Best regards,
             },
             "thanks_meeting": {
                 "subject": "Thank You for Our Recent Meeting - Diksha Foundation",
-                "body": f"""Dear {{{{contact_person}}}},
+                "body": """Dear {{{{contact_person}}}},
 
 Thank you for the opportunity to discuss potential collaboration between {{{{organization_name}}}} and Diksha Foundation.
 
@@ -705,7 +705,7 @@ Best regards,
             },
             "connect": {
                 "subject": "Warm Connection Email - Diksha Foundation",
-                "body": f"""Dear {{{{contact_person}}}},
+                "body": """Dear {{{{contact_person}}}},
 
 I hope this message finds you well. I'm {{{{contact_person}}}} from Diksha Foundation, and I wanted to reach out as a warm connection.
 
@@ -720,7 +720,7 @@ Best regards,
             },
             "proposal": {
                 "subject": "Formal Partnership Proposal - Diksha Foundation Digital Skills Program",
-                "body": f"""Dear {{{{contact_person}}}},
+                "body": """Dear {{{{contact_person}}}},
 
 Thank you for the opportunity to submit a formal partnership proposal to {{{{organization_name}}}}. Based on our discussions and your organization's commitment to {{{{sector_tags}}}}, I'm confident this partnership will create significant impact.
 
@@ -755,7 +755,7 @@ Team Diksha Foundation"""
             },
             "proposal_cover": {
                 "subject": "Cover Note for Partnership Proposal - Diksha Foundation",
-                "body": f"""Dear {{{{contact_person}}}},
+                "body": """Dear {{{{contact_person}}}},
 
 I hope this message finds you well. I'm {{{{contact_person}}}} from Diksha Foundation, and I wanted to submit a formal partnership proposal to {{{{organization_name}}}}.
 
@@ -792,7 +792,7 @@ Best regards,
             },
             "proposal_reminder": {
                 "subject": "Reminder for Partnership Proposal Response - Diksha Foundation",
-                "body": f"""Dear {{{{contact_person}}}},
+                "body": """Dear {{{{contact_person}}}},
 
 I hope this message finds you well. I'm {{{{contact_person}}}} from Diksha Foundation, and I wanted to remind you about our formal partnership proposal.
 
@@ -829,7 +829,7 @@ Best regards,
             },
             "pitch": {
                 "subject": "Strong Pitch Highlighting Alignment & Value - Diksha Foundation",
-                "body": f"""Dear {{{{contact_person}}}},
+                "body": """Dear {{{{contact_person}}}},
 
 I hope this message finds you well. I'm {{{{contact_person}}}} from Diksha Foundation, and I wanted to share a strong pitch highlighting our alignment and value.
 
@@ -851,7 +851,7 @@ Best regards,
             },
             "celebration": {
                 "subject": "Celebrating Our Partnership - Diksha Foundation",
-                "body": f"""Dear {{{{contact_person}}}},
+                "body": """Dear {{{{contact_person}}}},
 
 I'm thrilled to officially welcome {{{{organization_name}}}} as a partner of Diksha Foundation! This is a momentous occasion that will enable us to create even greater impact in our communities.
 
@@ -877,7 +877,7 @@ Team Diksha Foundation"""
             },
             "impact_story": {
                 "subject": "Impact Story - Diksha Foundation",
-                "body": f"""Dear {{{{contact_person}}}},
+                "body": """Dear {{{{contact_person}}}},
 
 I hope this message finds you well. I'm {{{{contact_person}}}} from Diksha Foundation, and I wanted to share a story about our impact.
 
@@ -899,7 +899,7 @@ Best regards,
             },
             "invite": {
                 "subject": "Invite to Diksha Foundation Events - Digital Skills Training",
-                "body": f"""Dear {{{{contact_person}}}},
+                "body": """Dear {{{{contact_person}}}},
 
 I hope this message finds you well. I'm {{{{contact_person}}}} from Diksha Foundation, and I wanted to invite you to our upcoming digital skills training events.
 
@@ -921,7 +921,7 @@ Best regards,
             },
             "festival_greeting": {
                 "subject": "Festival Greeting - Diksha Foundation",
-                "body": f"""Dear {{{{contact_person}}}},
+                "body": """Dear {{{{contact_person}}}},
 
 I hope this message finds you well. I'm {{{{contact_person}}}} from Diksha Foundation, and I wanted to send you a festive greeting.
 
