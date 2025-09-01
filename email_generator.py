@@ -50,6 +50,26 @@ def retry_on_failure(max_retries=None, delay=None):
         return wrapper
     return decorator
 
+class RateLimiter:
+    """Simple rate limiter for API calls"""
+    def __init__(self, max_calls=10, time_window=60):
+        self.max_calls = max_calls
+        self.time_window = time_window
+        self.calls = defaultdict(list)
+    
+    def is_allowed(self, identifier: str) -> bool:
+        now = time.time()
+        # Clean old entries
+        self.calls[identifier] = [
+            call_time for call_time in self.calls[identifier] 
+            if now - call_time < self.time_window
+        ]
+        
+        if len(self.calls[identifier]) < self.max_calls:
+            self.calls[identifier].append(now)
+            return True
+        return False
+
 class EmailGenerator:
     """Modular email generator with template-based enhancement and Google Drive integration"""
     
@@ -74,26 +94,6 @@ class EmailGenerator:
         
         # Log deployment mode
         logger.info(f"EmailGenerator initialized in {DEPLOYMENT_MODE.value} mode")
-
-class RateLimiter:
-    """Simple rate limiter for API calls"""
-    def __init__(self, max_calls=10, time_window=60):
-        self.max_calls = max_calls
-        self.time_window = time_window
-        self.calls = defaultdict(list)
-    
-    def is_allowed(self, identifier: str) -> bool:
-        now = time.time()
-        # Clean old entries
-        self.calls[identifier] = [
-            call_time for call_time in self.calls[identifier] 
-            if now - call_time < self.time_window
-        ]
-        
-        if len(self.calls[identifier]) < self.max_calls:
-            self.calls[identifier].append(now)
-            return True
-        return False
     
     def get_system_health(self) -> Dict[str, Any]:
         """Monitor system resources for small deployments"""
@@ -238,22 +238,30 @@ class RateLimiter:
         cache_key = cache_manager.get_cache_key("donor_profile", organization_name)
         
         # Check global cache first
-        cached_profile = cache_manager.get(cache_key)
-        if cached_profile:
-            logger.info(f"Using cached donor profile for {organization_name}")
-            return cached_profile
+        try:
+            cached_profile = cache_manager.get(cache_key)
+            if cached_profile:
+                logger.info(f"Using cached donor profile for {organization_name}")
+                return cached_profile
+        except Exception as e:
+            logger.warning(f"Cache retrieval failed: {e}")
         
         try:
-            # Search for donor profile documents
-            query = f"name contains '{organization_name}' and (mimeType contains 'application/pdf' or mimeType contains 'application/vnd.google-apps.document')"
+            # Escape single quotes in organization name for query
+            safe_org_name = organization_name.replace("'", "\\'")
+            query = f"name contains '{safe_org_name}' and (mimeType contains 'application/pdf' or mimeType contains 'application/vnd.google-apps.document')"
             
-            # Search in donor profiles folder (you can customize this path)
-            results = self.drive_service.files().list(
-                q=query,
-                spaces='drive',
-                fields='files(id, name, mimeType, webViewLink, createdTime, modifiedTime)',
-                orderBy='modifiedTime desc'
-            ).execute()
+            # Add timeout and retry logic for API call
+            try:
+                results = self.drive_service.files().list(
+                    q=query,
+                    spaces='drive',
+                    fields='files(id, name, mimeType, webViewLink, createdTime, modifiedTime)',
+                    orderBy='modifiedTime desc'
+                ).execute()
+            except Exception as api_error:
+                logger.error(f"Google Drive API error: {api_error}")
+                return None
             
             files = results.get('files', [])
             
@@ -280,8 +288,11 @@ class RateLimiter:
                 'content_summary': self._summarize_profile_content(profile_content)
             }
             
-            # Cache in global cache
-            cache_manager.set(cache_key, profile_data, CACHE_CONFIG['profile_timeout'])
+            # Cache in global cache with error handling
+            try:
+                cache_manager.set(cache_key, profile_data, CACHE_CONFIG['profile_timeout'])
+            except Exception as e:
+                logger.warning(f"Cache storage failed: {e}")
             
             return profile_data
             
@@ -364,7 +375,7 @@ class RateLimiter:
         # Get donor profile from Google Drive
         donor_profile = self._get_donor_profile_from_drive(donor_data.get('organization_name', ''))
         
-        context = """
+        context = f"""
         You are a fundraising expert at Diksha Foundation. Your task is to ENHANCE an existing email template by making it more personalized, engaging, and professional.
         
         ORGANIZATION CONTEXT (from Google Sheets):
@@ -381,7 +392,7 @@ class RateLimiter:
         
         # Add Google Drive profile context if available
         if donor_profile:
-            context += """
+            context += f"""
         
         DONOR PROFILE (from Google Drive):
         - Profile File: {donor_profile['file_name']}
@@ -398,7 +409,7 @@ class RateLimiter:
         Use the available Google Sheets data for personalization.
         """
         
-        context += """
+        context += f"""
         
         DIKSHA FOUNDATION ACHIEVEMENTS:
         - {DIKSHA_INFO['youth_trained']} youth trained in digital literacy
@@ -509,6 +520,10 @@ class RateLimiter:
     
     def _parse_claude_response(self, response_text: str) -> Tuple[str, str, str]:
         """Parse Claude's response to extract subject, body, and signature"""
+        if not response_text:
+            logger.warning("Empty Claude response received")
+            return "", "", ""
+        
         lines = response_text.split('\n')
         subject = ""
         body = ""
@@ -528,6 +543,10 @@ class RateLimiter:
                 body += line + "\n"
             elif current_section == "signature" and line:
                 signature += line + "\n"
+        
+        # Validate that we got at least subject and body
+        if not subject or not body:
+            logger.warning(f"Claude response parsing incomplete. Subject: '{subject[:50]}...', Body: '{body[:50]}...'")
         
         return subject.strip(), body.strip(), signature.strip()
     
@@ -590,51 +609,51 @@ class RateLimiter:
     def _get_base_template(self, template_type: str) -> Optional[Dict[str, str]]:
         """Get base template for the specified type"""
         templates = {
-            "identification": {
-                "subject": "Partnership Opportunity with Diksha Foundation - Digital Skills Training",
-                "body": """Dear {{{{contact_person}}}},
-
-I hope this message finds you well. I'm reaching out from Diksha Foundation, where we've been transforming lives through digital skills training and youth empowerment in Bihar since 2010.
-
-Given {{{{organization_name}}}}'s focus on {{{{sector_tags}}}}, I believe there is strong alignment between our mission and your organization's goals. We've successfully trained over 2,500 youth in digital literacy, with an 85% employment rate post-training.
-
-Our programs focus on:
-• Digital Skills Training for underserved communities
-• Youth Empowerment through technology education
-• Rural Education Access in Bihar
-
-I would love to discuss how we might collaborate to expand our impact. Would you be available for a brief call next week to explore potential partnership opportunities?
-
-Looking forward to connecting.
-
-Best regards,
-Team Diksha Foundation"""
-            },
-            "intro": {
-                "subject": "First Introduction to Diksha Foundation - Digital Skills Training",
-                "body": """Dear {{{{contact_person}}}},
-
-I hope this message finds you well. I'm {{{{contact_person}}}} from Diksha Foundation, and I wanted to introduce myself and our work.
-
-Diksha Foundation is a non-profit organization dedicated to empowering youth through digital literacy and technology education. We've been successfully training youth in Bihar for over 10 years, with a proven track record of 85% employment post-training.
-
-Our programs include:
-• Digital Literacy Training for underserved communities
-• Youth Empowerment through technology education
-• Rural Education Access in Bihar
-
-I'd love to learn more about {{{{organization_name}}}}'s mission and how we might collaborate to create meaningful impact.
-
-Looking forward to connecting.
-
-Best regards,
-{{{{contact_person}}}} from Diksha Foundation"""
-            },
+                         "identification": {
+                 "subject": "Partnership Opportunity with Diksha Foundation - Digital Skills Training",
+                 "body": """Dear {{contact_person}},
+ 
+ I hope this message finds you well. I'm reaching out from Diksha Foundation, where we've been transforming lives through digital skills training and youth empowerment in Bihar since 2010.
+ 
+ Given {{organization_name}}'s focus on {{sector_tags}}, I believe there is strong alignment between our mission and your organization's goals. We've successfully trained over 2,500 youth in digital literacy, with an 85% employment rate post-training.
+ 
+ Our programs focus on:
+ • Digital Skills Training for underserved communities
+ • Youth Empowerment through technology education
+ • Rural Education Access in Bihar
+ 
+ I would love to discuss how we might collaborate to expand our impact. Would you be available for a brief call next week to explore potential partnership opportunities?
+ 
+ Looking forward to connecting.
+ 
+ Best regards,
+ Team Diksha Foundation"""
+             },
+                         "intro": {
+                 "subject": "First Introduction to Diksha Foundation - Digital Skills Training",
+                 "body": """Dear {{contact_person}},
+ 
+ I hope this message finds you well. I'm {{contact_person}} from Diksha Foundation, and I wanted to introduce myself and our work.
+ 
+ Diksha Foundation is a non-profit organization dedicated to empowering youth through digital literacy and technology education. We've been successfully training youth in Bihar for over 10 years, with a proven track record of 85% employment post-training.
+ 
+ Our programs include:
+ • Digital Literacy Training for underserved communities
+ • Youth Empowerment through technology education
+ • Rural Education Access in Bihar
+ 
+ I'd love to learn more about {{organization_name}}'s mission and how we might collaborate to create meaningful impact.
+ 
+ Looking forward to connecting.
+ 
+ Best regards,
+ {{contact_person}} from Diksha Foundation"""
+             },
             "concept": {
                 "subject": "A Concise Concept Pitch for Diksha Foundation",
-                "body": """Dear {{{{contact_person}}}},
+                "body": """Dear {{contact_person}},
 
-I hope this message finds you well. I'm {{{{contact_person}}}} from Diksha Foundation, and I wanted to share a concise concept pitch for our work.
+I hope this message finds you well. I'm {{contact_person}} from Diksha Foundation, and I wanted to share a concise concept pitch for our work.
 
 Diksha Foundation is a non-profit organization that has been transforming lives through digital literacy and youth empowerment in Bihar since 2010. We've successfully trained over 2,500 youth in digital literacy, with an 85% employment rate post-training.
 
@@ -650,15 +669,15 @@ Would you be interested in a brief call to discuss how we might collaborate?
 Looking forward to connecting.
 
 Best regards,
-{{{{contact_person}}}} from Diksha Foundation"""
+{{contact_person}} from Diksha Foundation"""
             },
             "engagement": {
                 "subject": "Deepening Our Partnership Discussion - Diksha Foundation",
-                "body": """Dear {{{{contact_person}}}},
+                "body": """Dear {{contact_person}},
 
 Thank you for your initial interest in our work at Diksha Foundation. I'm excited to explore how we can deepen our potential partnership.
 
-Based on our previous discussion and {{{{organization_name}}}}'s expertise in {{{{sector_tags}}}}, I see excellent opportunities for collaboration. Our proven track record in Bihar demonstrates the scalability of our model, and I believe we could achieve even greater impact together.
+Based on our previous discussion and {{organization_name}}'s expertise in {{sector_tags}}, I see excellent opportunities for collaboration. Our proven track record in Bihar demonstrates the scalability of our model, and I believe we could achieve even greater impact together.
 
 Key areas for discussion:
 • Program expansion opportunities
@@ -666,7 +685,7 @@ Key areas for discussion:
 • Impact measurement and reporting
 • Long-term partnership framework
 
-Given your estimated grant size of {{{{estimated_grant_size}}}}, we could significantly scale our operations and reach more underserved communities.
+Given your estimated grant size of {{estimated_grant_size}}, we could significantly scale our operations and reach more underserved communities.
 
 Would you be available for a detailed discussion next week? I can prepare a comprehensive proposal based on your specific interests and requirements.
 
@@ -675,24 +694,24 @@ Team Diksha Foundation"""
             },
             "meeting_request": {
                 "subject": "Request for a Meeting/Call with Diksha Foundation",
-                "body": """Dear {{{{contact_person}}}},
+                "body": """Dear {{contact_person}},
 
-I hope this message finds you well. I'm {{{{contact_person}}}} from Diksha Foundation, and I'd like to request a meeting or call to discuss potential collaboration.
+I hope this message finds you well. I'm {{contact_person}} from Diksha Foundation, and I'd like to request a meeting or call to discuss potential collaboration.
 
-Based on our previous discussions and {{{{organization_name}}}}'s focus on {{{{sector_tags}}}}, I believe we have a strong alignment. I'd like to explore how we can work together to create meaningful impact.
+Based on our previous discussions and {{organization_name}}'s focus on {{sector_tags}}, I believe we have a strong alignment. I'd like to explore how we can work together to create meaningful impact.
 
 Would you be available for a meeting or call at your earliest convenience? I can prepare a detailed proposal and answer any questions you might have.
 
 Looking forward to connecting.
 
 Best regards,
-{{{{contact_person}}}} from Diksha Foundation"""
+{{contact_person}} from Diksha Foundation"""
             },
             "thanks_meeting": {
                 "subject": "Thank You for Our Recent Meeting - Diksha Foundation",
-                "body": """Dear {{{{contact_person}}}},
+                "body": """Dear {{contact_person}},
 
-Thank you for the opportunity to discuss potential collaboration between {{{{organization_name}}}} and Diksha Foundation.
+Thank you for the opportunity to discuss potential collaboration between {{organization_name}} and Diksha Foundation.
 
 I'm excited about the alignment between our missions and the potential for partnership. I'd like to explore how we can work together to create meaningful impact.
 
@@ -701,34 +720,34 @@ Would you be available for a follow-up call to discuss specific partnership deta
 Looking forward to connecting.
 
 Best regards,
-{{{{contact_person}}}} from Diksha Foundation"""
+{{contact_person}} from Diksha Foundation"""
             },
             "connect": {
                 "subject": "Warm Connection Email - Diksha Foundation",
-                "body": """Dear {{{{contact_person}}}},
+                "body": """Dear {{contact_person}},
 
-I hope this message finds you well. I'm {{{{contact_person}}}} from Diksha Foundation, and I wanted to reach out as a warm connection.
+I hope this message finds you well. I'm {{contact_person}} from Diksha Foundation, and I wanted to reach out as a warm connection.
 
-I've heard about {{{{organization_name}}}}'s excellent work in {{{{sector_tags}}}}, and I believe there's a strong alignment between our missions. I'd love to learn more about your organization and how we might collaborate.
+I've heard about {{organization_name}}'s excellent work in {{sector_tags}}, and I believe there's a strong alignment between our missions. I'd love to learn more about your organization and how we might collaborate.
 
 Would you be open to a brief call to discuss potential partnership opportunities?
 
 Looking forward to connecting.
 
 Best regards,
-{{{{contact_person}}}} from Diksha Foundation"""
+{{contact_person}} from Diksha Foundation"""
             },
             "proposal": {
                 "subject": "Formal Partnership Proposal - Diksha Foundation Digital Skills Program",
-                "body": """Dear {{{{contact_person}}}},
+                "body": """Dear {{contact_person}},
 
-Thank you for the opportunity to submit a formal partnership proposal to {{{{organization_name}}}}. Based on our discussions and your organization's commitment to {{{{sector_tags}}}}, I'm confident this partnership will create significant impact.
+Thank you for the opportunity to submit a formal partnership proposal to {{organization_name}}. Based on our discussions and your organization's commitment to {{sector_tags}}, I'm confident this partnership will create significant impact.
 
 PROPOSAL OVERVIEW:
 Program: Digital Skills Training & Youth Empowerment
 Duration: 12 months (extendable)
 Target: 500+ youth in underserved communities
-Location: Bihar (expandable to {{{{geography}}} if different)
+Location: Bihar (expandable to {{geography}}} if different)
 
 BUDGET BREAKDOWN:
 • Training Materials & Technology: 40%
@@ -755,17 +774,17 @@ Team Diksha Foundation"""
             },
             "proposal_cover": {
                 "subject": "Cover Note for Partnership Proposal - Diksha Foundation",
-                "body": """Dear {{{{contact_person}}}},
+                "body": """Dear {{contact_person}},
 
-I hope this message finds you well. I'm {{{{contact_person}}}} from Diksha Foundation, and I wanted to submit a formal partnership proposal to {{{{organization_name}}}}.
+I hope this message finds you well. I'm {{contact_person}} from Diksha Foundation, and I wanted to submit a formal partnership proposal to {{organization_name}}.
 
-Based on our discussions and your organization's commitment to {{{{sector_tags}}}}, I'm confident this partnership will create significant impact.
+Based on our discussions and your organization's commitment to {{sector_tags}}, I'm confident this partnership will create significant impact.
 
 PROPOSAL OVERVIEW:
 Program: Digital Skills Training & Youth Empowerment
 Duration: 12 months (extendable)
 Target: 500+ youth in underserved communities
-Location: Bihar (expandable to {{{{geography}}} if different)
+Location: Bihar (expandable to {{geography}}} if different)
 
 BUDGET BREAKDOWN:
 • Training Materials & Technology: 40%
@@ -788,21 +807,21 @@ NEXT STEPS:
 I'm available for a detailed presentation at your convenience. Please let me know your preferred time and format.
 
 Best regards,
-{{{{contact_person}}}} from Diksha Foundation"""
+{{contact_person}} from Diksha Foundation"""
             },
             "proposal_reminder": {
                 "subject": "Reminder for Partnership Proposal Response - Diksha Foundation",
-                "body": """Dear {{{{contact_person}}}},
+                "body": """Dear {{contact_person}},
 
-I hope this message finds you well. I'm {{{{contact_person}}}} from Diksha Foundation, and I wanted to remind you about our formal partnership proposal.
+I hope this message finds you well. I'm {{contact_person}} from Diksha Foundation, and I wanted to remind you about our formal partnership proposal.
 
-Based on our discussions and your organization's commitment to {{{{sector_tags}}}}, I'm confident this partnership will create significant impact.
+Based on our discussions and your organization's commitment to {{sector_tags}}, I'm confident this partnership will create significant impact.
 
 PROPOSAL OVERVIEW:
 Program: Digital Skills Training & Youth Empowerment
 Duration: 12 months (extendable)
 Target: 500+ youth in underserved communities
-Location: Bihar (expandable to {{{{geography}}} if different)
+Location: Bihar (expandable to {{geography}}} if different)
 
 BUDGET BREAKDOWN:
 • Training Materials & Technology: 40%
@@ -825,13 +844,13 @@ NEXT STEPS:
 I'm available for a detailed presentation at your convenience. Please let me know your preferred time and format.
 
 Best regards,
-{{{{contact_person}}}} from Diksha Foundation"""
+{{contact_person}} from Diksha Foundation"""
             },
             "pitch": {
                 "subject": "Strong Pitch Highlighting Alignment & Value - Diksha Foundation",
-                "body": """Dear {{{{contact_person}}}},
+                "body": """Dear {{contact_person}},
 
-I hope this message finds you well. I'm {{{{contact_person}}}} from Diksha Foundation, and I wanted to share a strong pitch highlighting our alignment and value.
+I hope this message finds you well. I'm {{contact_person}} from Diksha Foundation, and I wanted to share a strong pitch highlighting our alignment and value.
 
 Diksha Foundation is a non-profit organization that has been transforming lives through digital literacy and youth empowerment in Bihar since 2010. We've successfully trained over 2,500 youth in digital literacy, with an 85% employment rate post-training.
 
@@ -847,15 +866,15 @@ Would you be interested in a detailed discussion to explore how we might collabo
 Looking forward to connecting.
 
 Best regards,
-{{{{contact_person}}}} from Diksha Foundation"""
+{{contact_person}} from Diksha Foundation"""
             },
             "celebration": {
                 "subject": "Celebrating Our Partnership - Diksha Foundation",
-                "body": """Dear {{{{contact_person}}}},
+                "body": """Dear {{contact_person}},
 
-I'm thrilled to officially welcome {{{{organization_name}}}} as a partner of Diksha Foundation! This is a momentous occasion that will enable us to create even greater impact in our communities.
+I'm thrilled to officially welcome {{organization_name}} as a partner of Diksha Foundation! This is a momentous occasion that will enable us to create even greater impact in our communities.
 
-Your commitment to {{{{sector_tags}}}} and our shared vision for youth empowerment makes this partnership particularly meaningful. Together, we'll be able to:
+Your commitment to {{sector_tags}} and our shared vision for youth empowerment makes this partnership particularly meaningful. Together, we'll be able to:
 
 • Expand our digital skills training programs
 • Reach more underserved communities
@@ -877,9 +896,9 @@ Team Diksha Foundation"""
             },
             "impact_story": {
                 "subject": "Impact Story - Diksha Foundation",
-                "body": """Dear {{{{contact_person}}}},
+                "body": """Dear {{contact_person}},
 
-I hope this message finds you well. I'm {{{{contact_person}}}} from Diksha Foundation, and I wanted to share a story about our impact.
+I hope this message finds you well. I'm {{contact_person}} from Diksha Foundation, and I wanted to share a story about our impact.
 
 Diksha Foundation has been transforming lives through digital literacy and youth empowerment in Bihar since 2010. We've successfully trained over 2,500 youth in digital literacy, with an 85% employment rate post-training.
 
@@ -895,13 +914,13 @@ Would you be interested in a detailed discussion to learn more about our impact 
 Looking forward to connecting.
 
 Best regards,
-{{{{contact_person}}}} from Diksha Foundation"""
+{{contact_person}} from Diksha Foundation"""
             },
             "invite": {
                 "subject": "Invite to Diksha Foundation Events - Digital Skills Training",
-                "body": """Dear {{{{contact_person}}}},
+                "body": """Dear {{contact_person}},
 
-I hope this message finds you well. I'm {{{{contact_person}}}} from Diksha Foundation, and I wanted to invite you to our upcoming digital skills training events.
+I hope this message finds you well. I'm {{contact_person}} from Diksha Foundation, and I wanted to invite you to our upcoming digital skills training events.
 
 Diksha Foundation is a non-profit organization that has been transforming lives through digital literacy and youth empowerment in Bihar since 2010. We've successfully trained over 2,500 youth in digital literacy, with an 85% employment rate post-training.
 
@@ -917,13 +936,13 @@ Would you be interested in attending one of our upcoming events?
 Looking forward to connecting.
 
 Best regards,
-{{{{contact_person}}}} from Diksha Foundation"""
+{{contact_person}} from Diksha Foundation"""
             },
             "festival_greeting": {
                 "subject": "Festival Greeting - Diksha Foundation",
-                "body": """Dear {{{{contact_person}}}},
+                "body": """Dear {{contact_person}},
 
-I hope this message finds you well. I'm {{{{contact_person}}}} from Diksha Foundation, and I wanted to send you a festive greeting.
+I hope this message finds you well. I'm {{contact_person}} from Diksha Foundation, and I wanted to send you a festive greeting.
 
 Diksha Foundation is a non-profit organization that has been transforming lives through digital literacy and youth empowerment in Bihar since 2010. We've successfully trained over 2,500 youth in digital literacy, with an 85% employment rate post-training.
 
@@ -939,7 +958,7 @@ Would you like to celebrate this festive season together?
 Looking forward to connecting.
 
 Best regards,
-{{{{contact_person}}}} from Diksha Foundation"""
+{{contact_person}} from Diksha Foundation"""
             }
         }
         
@@ -949,21 +968,12 @@ Best regards,
         """Customize email subject with donor data"""
         customized = subject
         
-        # Replace placeholders
-        if "{{contact_person}}" in customized:
-            customized = customized.replace("{{contact_person}}", donor_data.get('contact_person', 'there'))
-        
-        if "{{organization_name}}" in customized:
-            customized = customized.replace("{{organization_name}}", donor_data.get('organization_name', 'your organization'))
-        
-        if "{{sector_tags}}" in customized:
-            customized = customized.replace("{{sector_tags}}", donor_data.get('sector_tags', 'education and technology'))
-        
-        if "{{geography}}" in customized:
-            customized = customized.replace("{{geography}}", donor_data.get('geography', 'Bihar'))
-        
-        if "{{estimated_grant_size}}" in customized:
-            customized = customized.replace("{{estimated_grant_size}}", donor_data.get('estimated_grant_size', '₹5,00,000'))
+        # Fix: Use single braces for replacement - more robust
+        customized = customized.replace("{{contact_person}}", donor_data.get('contact_person', 'there'))
+        customized = customized.replace("{{organization_name}}", donor_data.get('organization_name', 'your organization'))
+        customized = customized.replace("{{sector_tags}}", donor_data.get('sector_tags', 'education and technology'))
+        customized = customized.replace("{{geography}}", donor_data.get('geography', 'Bihar'))
+        customized = customized.replace("{{estimated_grant_size}}", donor_data.get('estimated_grant_size', '₹5,00,000'))
         
         return customized
     
@@ -971,21 +981,12 @@ Best regards,
         """Customize email body with donor data"""
         customized = body
         
-        # Replace placeholders
-        if "{{contact_person}}" in customized:
-            customized = customized.replace("{{contact_person}}", donor_data.get('contact_person', 'there'))
-        
-        if "{{organization_name}}" in customized:
-            customized = customized.replace("{{organization_name}}", donor_data.get('organization_name', 'your organization'))
-        
-        if "{{sector_tags}}" in customized:
-            customized = customized.replace("{{sector_tags}}", donor_data.get('sector_tags', 'education and technology'))
-        
-        if "{{geography}}" in customized:
-            customized = customized.replace("{{geography}}", donor_data.get('geography', 'Bihar'))
-        
-        if "{{estimated_grant_size}}" in customized:
-            customized = customized.replace("{{estimated_grant_size}}", donor_data.get('estimated_grant_size', '₹5,00,000'))
+        # Fix: Use single braces for replacement - more robust
+        customized = customized.replace("{{contact_person}}", donor_data.get('contact_person', 'there'))
+        customized = customized.replace("{{organization_name}}", donor_data.get('organization_name', 'your organization'))
+        customized = customized.replace("{{sector_tags}}", donor_data.get('sector_tags', 'education and technology'))
+        customized = customized.replace("{{geography}}", donor_data.get('geography', 'Bihar'))
+        customized = customized.replace("{{estimated_grant_size}}", donor_data.get('estimated_grant_size', '₹5,00,000'))
         
         return customized
     
@@ -1009,7 +1010,12 @@ Best regards,
             enhanced_subject = base_subject
             if donor_data.get('priority') == 'High':
                 enhanced_subject = enhanced_subject.replace('Partnership', 'Priority Partnership')
-            if int(donor_data.get('alignment_score', 7)) >= 8:
+            try:
+                alignment_score = int(donor_data.get('alignment_score', 7))
+            except (ValueError, TypeError):
+                alignment_score = 7
+            
+            if alignment_score >= 8:
                 enhanced_subject = enhanced_subject.replace('Opportunity', 'High-Alignment Opportunity')
             
             # Enhance body with specific details
@@ -1020,7 +1026,7 @@ Best regards,
             if 'technology' in sector or 'digital' in sector:
                 enhanced_body = enhanced_body.replace(
                     'digital skills and education',
-                    f'digital skills and education, particularly relevant to {donor_data.get("organization_name")}\'s focus on {sector}'
+                    f'digital skills and education, particularly relevant to {donor_data.get("organization_name", "your organization")}\'s focus on {sector}'
                 )
             
             # Add geography-specific enhancements
@@ -1032,7 +1038,6 @@ Best regards,
                 )
             
             # Add alignment score enhancements
-            alignment_score = int(donor_data.get('alignment_score', 7))
             if alignment_score >= 8:
                 enhanced_body = enhanced_body.replace(
                     'I believe there is strong alignment',
