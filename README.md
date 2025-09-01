@@ -52,6 +52,28 @@ Search for organizations by name.
 /pipeline search Wipro
 ```
 
+### `/pipeline email <organization> | <template>`
+Generate a custom email based on available templates and organization data.
+
+**Available Templates:**
+- `identification` - Initial outreach and introduction
+- `engagement` - Relationship building and deeper discussion
+- `proposal` - Formal proposal submission
+- `followup` - Follow-up messages
+- `celebration` - Grant secured celebrations
+
+**Example:**
+```
+/pipeline email Wipro Foundation | identification
+```
+
+**What it does:**
+1. Pulls organization data from Google Sheets
+2. Selects the appropriate email template
+3. Customizes content with donor-specific information
+4. Generates subject line and body text
+5. Provides next steps for review and sending
+
 ## Google Sheets Structure
 
 The bot expects the following column structure in your Google Sheet:
@@ -135,6 +157,8 @@ python app.py
 - `POST /debug/assign` - Assign organization (JSON body)
 - `POST /debug/next` - Set next action (JSON body)
 - `POST /debug/stage` - Update stage (JSON body)
+- `GET /debug/templates` - List available email templates
+- `POST /debug/generate-email` - Generate custom email (JSON body)
 
 ## Troubleshooting
 
@@ -156,6 +180,8 @@ python app.py
 - **"Organization not found"**: The organization name doesn't match exactly. Use `/pipeline search` to find the correct name.
 - **"Google Sheets not connected"**: Check credentials file and service account permissions.
 - **"Failed to update"**: The organization may not exist or there may be a permissions issue.
+- **"Template type not found"**: Use one of the available template types: identification, engagement, proposal, followup, celebration.
+- **"Template generation failed"**: Check that the organization data is complete in Google Sheets.
 
 ## Development
 

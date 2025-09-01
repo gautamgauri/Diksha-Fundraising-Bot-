@@ -61,3 +61,4 @@ Check Railway logs for:
 - ✅ "Successfully connected to sheet"
 - ✅ "Retrieved X organizations grouped by Y stages"
 - ❌ Any error messages about authentication or sheet access
+

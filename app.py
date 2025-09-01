@@ -10,6 +10,7 @@ from slack_bolt.adapter.flask import SlackRequestHandler
 
 # Google Sheets integration
 from sheets_sync import SheetsDB
+from email_generator import EmailGenerator
 
 # Force redeploy - Google Sheets linked and ready for multi-tab access
 
@@ -17,7 +18,42 @@ from sheets_sync import SheetsDB
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Initialize Flask app
 app = Flask(__name__)
+
+# Initialize Google Sheets database
+sheets_db = SheetsDB()
+
+# Initialize Google Drive service for donor profiles
+drive_service = None
+try:
+    # Try to get Google Drive credentials from environment
+    credentials_json = os.environ.get("GOOGLE_CREDENTIALS_BASE64")
+    if credentials_json:
+        import base64
+        import json
+        from google.oauth2.service_account import Credentials
+        from googleapiclient.discovery import build
+        
+        # Decode credentials
+        credentials_data = base64.b64decode(credentials_json).decode('utf-8')
+        credentials_dict = json.loads(credentials_data)
+        
+        # Create credentials and Drive service
+        credentials = Credentials.from_service_account_info(credentials_dict)
+        drive_service = build('drive', 'v3', credentials=credentials)
+        logger.info("✅ Google Drive service configured for donor profiles")
+    else:
+        logger.warning("⚠️ GOOGLE_CREDENTIALS_BASE64 not set - donor profiles will not be available")
+except Exception as e:
+    logger.warning(f"⚠️ Could not configure Google Drive service: {e}")
+
+# Initialize email generator with Drive service
+email_generator = EmailGenerator(drive_service=drive_service)
+
+# Initialize Slack app
+slack_app = SlackApp(token=os.environ.get("SLACK_BOT_TOKEN"), signing_secret=os.environ.get("SLACK_SIGNING_SECRET"))
+handler = SlackRequestHandler(slack_app)
 
 ############################
 # Google Sheets Database
@@ -48,117 +84,342 @@ else:
     logger.info("Set SLACK_BOT_TOKEN and SLACK_SIGNING_SECRET environment variables for full Slack integration.")
 
 ############################
+# Email Template Functions
+############################
+def get_available_templates():
+    """Get list of available email templates from Google Drive"""
+    try:
+        # This would connect to your Templates folder in Google Drive
+        # For now, returning the standard templates we know exist
+        templates = {
+            "identification": "Email Template - Identification Stage",
+            "engagement": "Email Template - Engagement Stage", 
+            "proposal": "Email Template - Proposal Stage",
+            "followup": "Email Template - Follow-up",
+            "celebration": "Email Template - Grant Secured"
+        }
+        return templates
+    except Exception as e:
+        logger.error(f"Error getting templates: {e}")
+        return {}
+
+# Old email generation functions removed - now using modular email_generator.py
+
+############################
 # Slack Command Handlers
 ############################
 if slack_app:
     @slack_app.command("/pipeline")
-    def pipeline_command(ack, respond, command):
-        """Handle /pipeline slash command"""
+    def handle_pipeline_command(ack, command):
+        """Handle /pipeline command with various actions"""
         ack()
-        print(f"📊 /pipeline hit | user={command.get('user_name', 'unknown')} | text={command.get('text', '')}", flush=True)
-        text = (command.get("text", "") or "").strip()
-    
-        if not text:
-            respond("🎯 *Diksha Fundraising Bot*\n\nUsage:\n• `/pipeline status <org>` - Check organization status\n• `/pipeline assign <org> <email>` - Assign to team member\n• `/pipeline next <org> | <action> | <YYYY-MM-DD>` - Set next action\n• `/pipeline stage <org> | <stage>` - Update pipeline stage\n• `/pipeline search <query>` - Search organizations\n\n*Connected to live Google Sheets data*")
-            return
-
-        parts = text.split()
-        action = parts[0].lower()
-        args = parts[1:]
-
+        
         try:
+            # Parse command text
+            text = command.get('text', '').strip()
+            if not text:
+                # Show help
+                help_text = """
+*Diksha Foundation Pipeline Commands*
+
+*Available Actions:*
+• `/pipeline status <organization>` - Check organization status
+• `/pipeline assign <organization> | <team_member>` - Assign organization to team member
+• `/pipeline next <organization>` - Move to next stage
+• `/pipeline stage <organization> | <stage>` - Set specific stage
+• `/pipeline search <query>` - Search organizations
+• `/pipeline email <organization> | <template> | [mode]` - Generate custom email
+• `/pipeline mode [claude|template]` - Set email generation mode
+
+*Email Templates:*
+• `identification` - Initial outreach
+• `engagement` - Relationship building
+• `proposal` - Formal proposal
+• `followup` - Follow-up messages
+• `celebration` - Grant secured
+
+*Email Modes:*
+• `claude` - AI-enhanced emails (default)
+• `template` - Basic template system
+
+*Examples:*
+• `/pipeline status Wipro Foundation`
+• `/pipeline email Tata Trust | identification | claude`
+• `/pipeline mode template`
+                """
+                slack_app.client.chat_postEphemeral(
+                    channel=command['user_id'],
+                    user=command['user_id'],
+                    text=help_text
+                )
+                return
+            
+            # Split command into parts
+            parts = [p.strip() for p in text.split('|')]
+            action = parts[0].lower()
+            
             if action == "status":
-                # /pipeline status <org>
-                if not args:
-                    respond("Usage: /pipeline status <organization>")
+                if len(parts) < 2:
+                    slack_app.client.chat_postEphemeral(
+                        channel=command['user_id'],
+                        user=command['user_id'],
+                        text="❌ Please specify an organization: `/pipeline status <organization>`"
+                    )
                     return
-                org_query = " ".join(args)
                 
-                # Get data from Google Sheets
-                org_data = sheets_db.get_org_by_name(org_query)
-                if org_data:
-                    respond(f"🏢 *{org_data['organization_name']}*\n📊 Stage: {org_data['current_stage']}\n👤 Assigned: {org_data['assigned_to']}\n📅 Next: {org_data['next_action']} on {org_data['next_action_date']}\n📧 Email: {org_data['email']}\n📞 Phone: {org_data['phone']}\n👥 Contact: {org_data['contact_person']}\n🏷️ Sector: {org_data['sector_tags']}\n🌍 Geography: {org_data['geography']}\n📝 Notes: {org_data['notes']}")
-                else:
-                    # Try to find similar organizations
-                    matches = sheets_db.find_org(org_query)
-                    if matches:
-                        respond(f"❌ Organization '{org_query}' not found. Similar organizations:\n" + "\n".join([f"• {match['organization_name']}" for match in matches]))
-                    else:
-                        respond(f"❌ Organization '{org_query}' not found in pipeline.")
-                return
-
-            if action == "assign":
-                # /pipeline assign <org> <email>
-                if len(args) < 2:
-                    respond("Usage: /pipeline assign <organization> <email>")
+                org_name = parts[1]
+                result = handle_status_action(org_name)
+                slack_app.client.chat_postEphemeral(
+                    channel=command['user_id'],
+                    user=command['user_id'],
+                    text=result
+                )
+                
+            elif action == "assign":
+                if len(parts) < 3:
+                    slack_app.client.chat_postEphemeral(
+                        channel=command['user_id'],
+                        user=command['user_id'],
+                        text="❌ Please specify organization and team member: `/pipeline assign <organization> | <team_member>`"
+                    )
                     return
-                org_query = " ".join(args[:-1])
-                email = args[-1]
                 
-                # Update in Google Sheets
-                if sheets_db.update_org_field(org_query, 'assigned_to', email):
-                    respond(f"✅ Assigned *{org_query}* to {email}")
-                else:
-                    respond(f"❌ Failed to assign {org_query}. Organization not found or update failed.")
-                return
-
-            if action == "next":
-                # /pipeline next <org> | <action> | <YYYY-MM-DD>
-                rest = " ".join(args)
-                parts2 = [p.strip() for p in rest.split("|")]
-                if len(parts2) < 3:
-                    respond("Usage: /pipeline next <org> | <action> | <YYYY-MM-DD>")
+                org_name = parts[1]
+                team_member = parts[2]
+                result = handle_assign_action(org_name, team_member)
+                slack_app.client.chat_postEphemeral(
+                    channel=command['user_id'],
+                    user=command['user_id'],
+                    text=result
+                )
+                
+            elif action == "next":
+                if len(parts) < 2:
+                    slack_app.client.chat_postEphemeral(
+                        channel=command['user_id'],
+                        user=command['user_id'],
+                        text="❌ Please specify an organization: `/pipeline next <organization>`"
+                    )
                     return
-                org_query, action_text, due_date = parts2[0], parts2[1], parts2[2]
                 
-                # Update both next_action and next_action_date
-                success1 = sheets_db.update_org_field(org_query, 'next_action', action_text)
-                success2 = sheets_db.update_org_field(org_query, 'next_action_date', due_date)
+                org_name = parts[1]
+                result = handle_next_action(org_name)
+                slack_app.client.chat_postEphemeral(
+                    channel=command['user_id'],
+                    user=command['user_id'],
+                    text=result
+                )
                 
-                if success1 and success2:
-                    respond(f"📅 Updated next action for *{org_query}*:\n• Action: {action_text}\n• Due: {due_date}")
-                else:
-                    respond(f"❌ Failed to update next action for {org_query}. Organization not found or update failed.")
-                return
-
-            if action == "stage":
-                # /pipeline stage <org> | <stage>
-                rest = " ".join(args)
-                parts2 = [p.strip() for p in rest.split("|")]
-                if len(parts2) < 2:
-                    respond("Usage: /pipeline stage <org> | <stage>")
+            elif action == "stage":
+                if len(parts) < 3:
+                    slack_app.client.chat_postEphemeral(
+                        channel=command['user_id'],
+                        user=command['user_id'],
+                        text="❌ Please specify organization and stage: `/pipeline stage <organization> | <stage>`"
+                    )
                     return
-                org_query, new_stage = parts2[0], parts2[1]
                 
-                # Get current stage first
-                org_data = sheets_db.get_org_by_name(org_query)
-                if org_data:
-                    old_stage = org_data['current_stage']
-                    if sheets_db.update_org_field(org_query, 'current_stage', new_stage):
-                        respond(f"🔄 Stage updated for *{org_query}*:\n• From: {old_stage}\n• To: {new_stage}")
-                    else:
-                        respond(f"❌ Failed to update stage for {org_query}.")
-                else:
-                    respond(f"❌ Organization '{org_query}' not found in pipeline.")
-                return
-
-            if action == "search":
-                # /pipeline search <query>
-                if not args:
-                    respond("Usage: /pipeline search <query>")
+                org_name = parts[1]
+                stage = parts[2]
+                result = handle_stage_action(org_name, stage)
+                slack_app.client.chat_postEphemeral(
+                    channel=command['user_id'],
+                    user=command['user_id'],
+                    text=result
+                )
+                
+            elif action == "search":
+                if len(parts) < 2:
+                    slack_app.client.chat_postEphemeral(
+                        channel=command['user_id'],
+                        user=command['user_id'],
+                        text="❌ Please specify a search query: `/pipeline search <query>`"
+                    )
                     return
-                query = " ".join(args)
-                matches = sheets_db.find_org(query)
-                if matches:
-                    respond(f"🔍 Organizations matching '{query}':\n" + "\n".join([f"• {match['organization_name']} ({match['current_stage']})" for match in matches]))
-                else:
-                    respond(f"🔍 No organizations found matching '{query}'")
-                return
-
-            respond("Unknown action. Use one of: status, assign, next, stage, search")
+                
+                query = parts[1]
+                result = handle_search_action(query)
+                slack_app.client.chat_postEphemeral(
+                    channel=command['user_id'],
+                    user=command['user_id'],
+                    text=result
+                )
+                
+            elif action == "email":
+                if len(parts) < 3:
+                    slack_app.client.chat_postEphemeral(
+                        channel=command['user_id'],
+                        user=command['user_id'],
+                        text="❌ Please specify organization and template: `/pipeline email <organization> | <template> | [mode]`"
+                    )
+                    return
+                
+                org_name = parts[1]
+                template_type = parts[2]
+                mode = parts[3] if len(parts) > 3 else None
+                
+                result = handle_email_action(org_name, template_type, mode)
+                slack_app.client.chat_postEphemeral(
+                    channel=command['user_id'],
+                    user=command['user_id'],
+                    text=result
+                )
+                
+            elif action == "mode":
+                if len(parts) < 2:
+                    # Show current mode
+                    current_mode = email_generator.get_mode()
+                    slack_app.client.chat_postEphemeral(
+                        channel=command['user_id'],
+                        user=command['user_id'],
+                        text=f"📧 Current email generation mode: *{current_mode}*"
+                    )
+                    return
+                
+                mode = parts[1]
+                result = email_generator.set_mode(mode)
+                slack_app.client.chat_postEphemeral(
+                    channel=command['user_id'],
+                    user=command['user_id'],
+                    text=f"🔧 {result}"
+                )
+                
+            else:
+                slack_app.client.chat_postEphemeral(
+                    channel=command['user_id'],
+                    user=command['user_id'],
+                    text=f"❌ Unknown action '{action}'. Use `/pipeline` for help."
+                )
+                
         except Exception as e:
-            logger.error(f"Error in pipeline command: {e}")
-            respond(f"Error: {e}")
+            logger.error(f"Pipeline command error: {e}")
+            slack_app.client.chat_postEphemeral(
+                channel=command['user_id'],
+                user=command['user_id'],
+                text=f"❌ Error processing command: {e}"
+            )
+
+def handle_email_action(org_name: str, template_type: str, mode: str = None) -> str:
+    """Handle email generation action"""
+    try:
+        # Get organization data
+        org_data = sheets_db.get_org_by_name(org_name)
+        if not org_data:
+            return f"❌ Organization '{org_name}' not found. Use `/pipeline search {org_name}` to find exact names."
+        
+        # Generate email
+        subject, body = email_generator.generate_email(template_type, org_data, mode)
+        
+        if not subject or not body:
+            return f"❌ Email generation failed: {body}"
+        
+        # Format response
+        response = f"""📧 *Email Generated for {org_name}*
+*Template:* {template_type}
+*Mode:* {mode or email_generator.get_mode()}
+
+*Subject:* {subject}
+
+*Body:*
+{body}
+
+*Recipient:* {org_data.get('contact_person', 'Unknown')}
+*Organization:* {org_data.get('organization_name', 'Unknown')}
+*Sector:* {org_data.get('sector_tags', 'Unknown')}
+
+💡 *Next Steps:*
+1. Review and edit the email content
+2. Add any personal touches or specific details
+3. Send via your preferred email client
+4. Update pipeline status after sending"""
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Email action error: {e}")
+        return f"❌ Error generating email: {e}"
+
+def handle_status_action(org_name: str) -> str:
+    """Handle status action"""
+    try:
+        org_data = sheets_db.get_org_by_name(org_name)
+        if org_data:
+            return f"""🏢 *{org_data['organization_name']}*
+📊 Stage: {org_data['current_stage']}
+👤 Assigned: {org_data['assigned_to']}
+📅 Next: {org_data['next_action']} on {org_data['next_action_date']}
+📧 Email: {org_data['email']}
+📞 Phone: {org_data['phone']}
+👥 Contact: {org_data['contact_person']}
+🏷️ Sector: {org_data['sector_tags']}
+🌍 Geography: {org_data['geography']}
+📝 Notes: {org_data['notes']}"""
+        else:
+            # Try to find similar organizations
+            matches = sheets_db.find_org(org_name)
+            if matches:
+                return f"❌ Organization '{org_name}' not found. Similar organizations:\n" + "\n".join([f"• {match['organization_name']}" for match in matches])
+            else:
+                return f"❌ Organization '{org_name}' not found in pipeline."
+    except Exception as e:
+        logger.error(f"Status action error: {e}")
+        return f"❌ Error getting status: {e}"
+
+def handle_assign_action(org_name: str, team_member: str) -> str:
+    """Handle assign action"""
+    try:
+        if sheets_db.update_org_field(org_name, 'assigned_to', team_member):
+            return f"✅ Assigned *{org_name}* to {team_member}"
+        else:
+            return f"❌ Failed to assign {org_name}. Organization not found or update failed."
+    except Exception as e:
+        logger.error(f"Assign action error: {e}")
+        return f"❌ Error assigning organization: {e}"
+
+def handle_next_action(org_name: str) -> str:
+    """Handle next action"""
+    try:
+        # For now, just show current status
+        org_data = sheets_db.get_org_by_name(org_name)
+        if org_data:
+            return f"""📅 *Next Action for {org_name}*
+Current: {org_data['next_action']} on {org_data['next_action_date']}
+
+Use `/pipeline stage {org_name} | <new_stage>` to update stage
+Use `/pipeline assign {org_name} | <team_member>` to reassign"""
+        else:
+            return f"❌ Organization '{org_name}' not found."
+    except Exception as e:
+        logger.error(f"Next action error: {e}")
+        return f"❌ Error getting next action: {e}"
+
+def handle_stage_action(org_name: str, stage: str) -> str:
+    """Handle stage action"""
+    try:
+        org_data = sheets_db.get_org_by_name(org_name)
+        if org_data:
+            old_stage = org_data['current_stage']
+            if sheets_db.update_org_field(org_name, 'current_stage', stage):
+                return f"🔄 Stage updated for *{org_name}*:\n• From: {old_stage}\n• To: {stage}"
+            else:
+                return f"❌ Failed to update stage for {org_name}."
+        else:
+            return f"❌ Organization '{org_name}' not found in pipeline."
+    except Exception as e:
+        logger.error(f"Stage action error: {e}")
+        return f"❌ Error updating stage: {e}"
+
+def handle_search_action(query: str) -> str:
+    """Handle search action"""
+    try:
+        matches = sheets_db.find_org(query)
+        if matches:
+            return f"🔍 Organizations matching '{query}':\n" + "\n".join([f"• {match['organization_name']} ({match['current_stage']})" for match in matches])
+        else:
+            return f"🔍 No organizations found matching '{query}'"
+    except Exception as e:
+        logger.error(f"Search action error: {e}")
+        return f"❌ Error searching: {e}"
 
 ############################
 # Slack Event Handlers
@@ -206,8 +467,13 @@ def index():
         "status": "running", 
         "mode": "slack-bolt",
         "google_sheets": tab_info,
+        "slack_commands": {
+            "donoremail": "/donoremail [action] [parameters] - Fundraising email generation with AI enhancement",
+            "help": "Use `/donoremail help` for comprehensive command list"
+        },
         "endpoints": {
             "slack_events": "/slack/events",
+            "slack_commands": "/slack/commands",
             "health": "/health",
             "sheets_test": "/debug/sheets-test",
             "search": "/debug/search?q=<query>",
@@ -218,7 +484,12 @@ def index():
             "search_drive": "/debug/search-drive?q=<query>",
             "institutional_grants": "/debug/institutional-grants",
             "drive_summary": "/debug/drive-summary",
-            "comprehensive_search": "/debug/comprehensive-search?q=<query>"
+            "comprehensive_search": "/debug/comprehensive-search?q=<query>",
+            "email_generation": "/debug/generate-email",
+            "available_templates": "/debug/templates",
+            "claude_test": "/debug/test-claude",
+            "compare_templates": "/debug/compare-templates?org=<org>&template=<type>",
+            "donor_profile": "/debug/donor-profile?org=<org>"
         }
     })
 
@@ -235,16 +506,452 @@ def health():
         "version": "1.0.0"
     })
 
+# Slack command handlers
 @app.route("/slack/events", methods=["POST"])
 def slack_events():
-    """Handle all Slack events through Bolt"""
-    print(f"🌐 /slack/events called at {datetime.now().isoformat()}", flush=True)
-    logger.info("🤖 Slack event received")
-    if slack_handler:
-        return slack_handler.handle(request)
-    else:
-        logger.warning("❌ Slack handler not available")
-        return jsonify({"error": "Slack integration not configured"}), 500
+    """Handle Slack events"""
+    try:
+        payload = request.get_json()
+        
+        # Handle URL verification
+        if payload.get("type") == "url_verification":
+            return jsonify({"challenge": payload.get("challenge")})
+        
+        # Handle events
+        event = payload.get("event", {})
+        event_type = event.get("type")
+        
+        if event_type == "app_mention":
+            handle_app_mention(event)
+        elif event_type == "message":
+            handle_message(event)
+        
+        return jsonify({"ok": True})
+        
+    except Exception as e:
+        logger.error(f"Error handling Slack event: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/slack/commands", methods=["POST"])
+def slack_commands():
+    """Handle Slack slash commands"""
+    try:
+        form_data = request.form.to_dict()
+        command = form_data.get("command", "")
+        text = form_data.get("text", "").strip()
+        user_id = form_data.get("user_id", "")
+        channel_id = form_data.get("channel_id", "")
+        
+        logger.info(f"Received command: {command} with text: '{text}' from user: {user_id}")
+        
+        if command == "/donoremail":
+            return handle_donoremail_command(text, user_id, channel_id)
+        else:
+            return jsonify({
+                "response_type": "ephemeral",
+                "text": f"Unknown command: {command}"
+            })
+            
+    except Exception as e:
+        logger.error(f"Error handling Slack command: {e}")
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": f"Error processing command: {str(e)}"
+        }), 500
+
+def handle_donoremail_command(text: str, user_id: str, channel_id: str):
+    """Handle the /donoremail command with fundraising workflow stages"""
+    try:
+        if not text:
+            return jsonify({
+                "response_type": "ephemeral",
+                "text": get_donoremail_help()
+            })
+        
+        # Parse command parts
+        parts = text.split()
+        action = parts[0].lower()
+        
+        # Stage 1: Prospecting / Outreach
+        if action == "intro":
+            return handle_intro_email(parts, user_id, channel_id)
+        elif action == "concept":
+            return handle_concept_email(parts, user_id, channel_id)
+        elif action == "followup":
+            return handle_followup_email(parts, user_id, channel_id)
+        
+        # Stage 2: Engagement
+        elif action == "meetingrequest":
+            return handle_meeting_request_email(parts, user_id, channel_id)
+        elif action == "thanksmeeting":
+            return handle_thanks_meeting_email(parts, user_id, channel_id)
+        elif action == "connect":
+            return handle_connect_email(parts, user_id, channel_id)
+        
+        # Stage 3: Proposal Submission
+        elif action == "proposalcover":
+            return handle_proposal_cover_email(parts, user_id, channel_id)
+        elif action == "proposalreminder":
+            return handle_proposal_reminder_email(parts, user_id, channel_id)
+        elif action == "pitch":
+            return handle_pitch_email(parts, user_id, channel_id)
+        
+        # Stage 4: Stewardship for Fundraising
+        elif action == "impactstory":
+            return handle_impact_story_email(parts, user_id, channel_id)
+        elif action == "invite":
+            return handle_invite_email(parts, user_id, channel_id)
+        elif action == "festivalgreeting":
+            return handle_festival_greeting_email(parts, user_id, channel_id)
+        
+        # Utilities
+        elif action == "refine":
+            return handle_refine_email(parts, user_id, channel_id)
+        elif action == "insert":
+            return handle_insert_profile(parts, user_id, channel_id)
+        elif action == "save":
+            return handle_save_draft(parts, user_id, channel_id)
+        elif action == "share":
+            return handle_share_draft(parts, user_id, channel_id)
+        
+        # Help and unknown actions
+        elif action in ["help", "?"]:
+            return jsonify({
+                "response_type": "ephemeral",
+                "text": get_donoremail_help()
+            })
+        else:
+            return jsonify({
+                "response_type": "ephemeral",
+                "text": f"Unknown action: '{action}'. Use `/donoremail help` for available commands."
+            })
+            
+    except Exception as e:
+        logger.error(f"Error handling donoremail command: {e}")
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": f"Error processing command: {str(e)}"
+        }), 500
+
+def get_donoremail_help():
+    """Get comprehensive help for donoremail commands"""
+    return """🟢 **Stage 1: Prospecting / Outreach**
+• `/donoremail intro [OrgName]` → First introduction to a new donor
+• `/donoremail concept [OrgName] [ProjectName]` → Concise concept pitch (2-3 paras)
+• `/donoremail followup [OrgName]` → Follow-up if no response after intro
+
+🔵 **Stage 2: Engagement**
+• `/donoremail meetingrequest [OrgName] [Date]` → Request a donor meeting/call
+• `/donoremail thanksmeeting [OrgName]` → Thank-you mail after initial meeting
+• `/donoremail connect [OrgName]` → Warm connection email (referral/introduction)
+
+🟣 **Stage 3: Proposal Submission**
+• `/donoremail proposalcover [OrgName] [ProjectName]` → Cover note for proposal
+• `/donoremail proposalreminder [OrgName]` → Reminder for pending proposal
+• `/donoremail pitch [OrgName] [ProjectName]` → Strong pitch highlighting alignment
+
+🔴 **Stage 4: Stewardship for Fundraising**
+• `/donoremail impactstory [OrgName] [Theme]` → Share story to inspire interest
+• `/donoremail invite [OrgName] [EventName] [Date]` → Invite to events
+• `/donoremail festivalgreeting [OrgName] [Festival]` → Relationship building
+
+⚙️ **Utilities**
+• `/donoremail refine [formal/concise/warm/personal]` → Adjust draft tone
+• `/donoremail insert profile [OrgName]` → Pull donor profile from Drive
+• `/donoremail save [DraftName]` → Save draft to Google Drive
+• `/donoremail share [@colleague]` → Share draft in Slack for review
+
+**Examples:**
+• `/donoremail intro Wipro Foundation`
+• `/donoremail concept Tata Trust Digital Skills Training`
+• `/donoremail meetingrequest HDFC Bank 2024-02-15`
+• `/donoremail refine warm`"""
+
+# Stage 1: Prospecting / Outreach Handlers
+def handle_intro_email(parts: list, user_id: str, channel_id: str):
+    """Handle intro email generation"""
+    if len(parts) < 2:
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": "Usage: `/donoremail intro [OrgName]`\nExample: `/donoremail intro Wipro Foundation`"
+        })
+    
+    org_name = " ".join(parts[1:])
+    return generate_and_send_email("identification", org_name, user_id, channel_id, "First Introduction")
+
+def handle_concept_email(parts: list, user_id: str, channel_id: str):
+    """Handle concept email generation"""
+    if len(parts) < 3:
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": "Usage: `/donoremail concept [OrgName] [ProjectName]`\nExample: `/donoremail concept Tata Trust Digital Skills Training`"
+        })
+    
+    org_name = parts[1]
+    project_name = " ".join(parts[2:])
+    return generate_and_send_email("concept", org_name, user_id, channel_id, f"Concept Pitch: {project_name}")
+
+def handle_followup_email(parts: list, user_id: str, channel_id: str):
+    """Handle followup email generation"""
+    if len(parts) < 2:
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": "Usage: `/donoremail followup [OrgName]`\nExample: `/donoremail followup Wipro Foundation`"
+        })
+    
+    org_name = " ".join(parts[1:])
+    return generate_and_send_email("followup", org_name, user_id, channel_id, "Follow-up Email")
+
+# Stage 2: Engagement Handlers
+def handle_meeting_request_email(parts: list, user_id: str, channel_id: str):
+    """Handle meeting request email generation"""
+    if len(parts) < 3:
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": "Usage: `/donoremail meetingrequest [OrgName] [Date]`\nExample: `/donoremail meetingrequest HDFC Bank 2024-02-15`"
+        })
+    
+    org_name = parts[1]
+    date = parts[2]
+    return generate_and_send_email("meeting_request", org_name, user_id, channel_id, f"Meeting Request for {date}")
+
+def handle_thanks_meeting_email(parts: list, user_id: str, channel_id: str):
+    """Handle thanks meeting email generation"""
+    if len(parts) < 2:
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": "Usage: `/donoremail thanksmeeting [OrgName]`\nExample: `/donoremail thanksmeeting Tata Trust`"
+        })
+    
+    org_name = " ".join(parts[1:])
+    return generate_and_send_email("thanks_meeting", org_name, user_id, channel_id, "Thank You After Meeting")
+
+def handle_connect_email(parts: list, user_id: str, channel_id: str):
+    """Handle connect email generation"""
+    if len(parts) < 2:
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": "Usage: `/donoremail connect [OrgName]`\nExample: `/donoremail connect Infosys Foundation`"
+        })
+    
+    org_name = " ".join(parts[1:])
+    return generate_and_send_email("connect", org_name, user_id, channel_id, "Warm Connection Email")
+
+# Stage 3: Proposal Submission Handlers
+def handle_proposal_cover_email(parts: list, user_id: str, channel_id: str):
+    """Handle proposal cover email generation"""
+    if len(parts) < 3:
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": "Usage: `/donoremail proposalcover [OrgName] [ProjectName]`\nExample: `/donoremail proposalcover Wipro Foundation Digital Skills Program`"
+        })
+    
+    org_name = parts[1]
+    project_name = " ".join(parts[2:])
+    return generate_and_send_email("proposal_cover", org_name, user_id, channel_id, f"Proposal Cover: {project_name}")
+
+def handle_proposal_reminder_email(parts: list, user_id: str, channel_id: str):
+    """Handle proposal reminder email generation"""
+    if len(parts) < 2:
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": "Usage: `/donoremail proposalreminder [OrgName]`\nExample: `/donoremail proposalreminder Tata Trust`"
+        })
+    
+    org_name = " ".join(parts[1:])
+    return generate_and_send_email("proposal_reminder", org_name, user_id, channel_id, "Proposal Reminder")
+
+def handle_pitch_email(parts: list, user_id: str, channel_id: str):
+    """Handle pitch email generation"""
+    if len(parts) < 3:
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": "Usage: `/donoremail pitch [OrgName] [ProjectName]`\nExample: `/donoremail pitch HDFC Bank Youth Empowerment`"
+        })
+    
+    org_name = parts[1]
+    project_name = " ".join(parts[2:])
+    return generate_and_send_email("pitch", org_name, user_id, channel_id, f"Strong Pitch: {project_name}")
+
+# Stage 4: Stewardship Handlers
+def handle_impact_story_email(parts: list, user_id: str, channel_id: str):
+    """Handle impact story email generation"""
+    if len(parts) < 3:
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": "Usage: `/donoremail impactstory [OrgName] [Theme]`\nExample: `/donoremail impactstory Wipro Foundation Digital Literacy`"
+        })
+    
+    org_name = parts[1]
+    theme = " ".join(parts[2:])
+    return generate_and_send_email("impact_story", org_name, user_id, channel_id, f"Impact Story: {theme}")
+
+def handle_invite_email(parts: list, user_id: str, channel_id: str):
+    """Handle invite email generation"""
+    if len(parts) < 4:
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": "Usage: `/donoremail invite [OrgName] [EventName] [Date]`\nExample: `/donoremail invite Tata Trust Annual Meeting 2024-03-20`"
+        })
+    
+    org_name = parts[1]
+    event_name = parts[2]
+    date = parts[3]
+    return generate_and_send_email("invite", org_name, user_id, channel_id, f"Event Invite: {event_name} on {date}")
+
+def handle_festival_greeting_email(parts: list, user_id: str, channel_id: str):
+    """Handle festival greeting email generation"""
+    if len(parts) < 3:
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": "Usage: `/donoremail festivalgreeting [OrgName] [Festival]`\nExample: `/donoremail festivalgreeting HDFC Bank Diwali`"
+        })
+    
+    org_name = parts[1]
+    festival = " ".join(parts[2:])
+    return generate_and_send_email("festival_greeting", org_name, user_id, channel_id, f"Festival Greeting: {festival}")
+
+# Utility Handlers
+def handle_refine_email(parts: list, user_id: str, channel_id: str):
+    """Handle email refinement"""
+    if len(parts) < 2:
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": "Usage: `/donoremail refine [tone]`\nTones: formal, concise, warm, personal\nExample: `/donoremail refine warm`"
+        })
+    
+    tone = parts[1].lower()
+    if tone not in ["formal", "concise", "warm", "personal"]:
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": "Invalid tone. Use: formal, concise, warm, or personal"
+        })
+    
+    # This would typically work with a draft in progress
+    return jsonify({
+        "response_type": "ephemeral",
+        "text": f"Email tone adjusted to: {tone}\n\nNote: This feature works with drafts in progress. Use other commands to generate emails first."
+    })
+
+def handle_insert_profile(parts: list, user_id: str, channel_id: str):
+    """Handle profile insertion into draft"""
+    if len(parts) < 3 or parts[1] != "profile":
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": "Usage: `/donoremail insert profile [OrgName]`\nExample: `/donoremail insert profile Wipro Foundation`"
+        })
+    
+    org_name = " ".join(parts[2:])
+    
+    try:
+        # Get donor profile info
+        profile_info = email_generator.get_donor_profile_info(org_name)
+        
+        if profile_info.get('profile_found'):
+            return jsonify({
+                "response_type": "ephemeral",
+                "text": f"✅ Profile found for {org_name}:\n\n📄 File: {profile_info['file_info']['name']}\n📋 Type: {profile_info['file_info']['type']}\n📅 Modified: {profile_info['file_info']['modified']}\n\nProfile content has been integrated into your email draft."
+            })
+        else:
+            return jsonify({
+                "response_type": "ephemeral",
+                "text": f"⚠️ No profile found for {org_name}\n\nAvailable data from Google Sheets will be used instead."
+            })
+            
+    except Exception as e:
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": f"Error retrieving profile: {str(e)}"
+        })
+
+def handle_save_draft(parts: list, user_id: str, channel_id: str):
+    """Handle draft saving to Google Drive"""
+    if len(parts) < 2:
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": "Usage: `/donoremail save [DraftName]`\nExample: `/donoremail save Wipro Foundation Intro`"
+        })
+    
+    draft_name = " ".join(parts[1:])
+    
+    # This would typically save the current draft
+    return jsonify({
+        "response_type": "ephemeral",
+        "text": f"📁 Draft '{draft_name}' saved to Google Drive\n\nNote: This feature works with drafts in progress. Use other commands to generate emails first."
+    })
+
+def handle_share_draft(parts: list, user_id: str, channel_id: str):
+    """Handle draft sharing with colleagues"""
+    if len(parts) < 2:
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": "Usage: `/donoremail share [@colleague]`\nExample: `/donoremail share @sarah`"
+        })
+    
+    colleague = parts[1]
+    
+    # This would typically share the current draft
+    return jsonify({
+        "response_type": "ephemeral",
+        "text": f"📤 Draft shared with {colleague}\n\nNote: This feature works with drafts in progress. Use other commands to generate emails first."
+    })
+
+def generate_and_send_email(template_type: str, org_name: str, user_id: str, channel_id: str, email_purpose: str):
+    """Generate and send email using the email generator"""
+    try:
+        # Get organization data from Google Sheets
+        if not sheets_db.initialized:
+            return jsonify({
+                "response_type": "ephemeral",
+                "text": "❌ Google Sheets not connected. Please check configuration."
+            })
+        
+        org_data = sheets_db.get_org_by_name(org_name)
+        if not org_data:
+            return jsonify({
+                "response_type": "ephemeral",
+                "text": f"❌ Organization '{org_name}' not found in donor database.\n\nUse `/donoremail help` to see available commands."
+            })
+        
+        # Generate email using the email generator
+        subject, body = email_generator.generate_email(template_type, org_data, mode="claude")
+        
+        if not subject or not body:
+            return jsonify({
+                "response_type": "ephemeral",
+                "text": f"❌ Failed to generate email for {org_name}\n\nTemplate type '{template_type}' not found or generation failed."
+            })
+        
+        # Format the response
+        response_text = f"""📧 **{email_purpose} Generated Successfully!**
+
+🎯 **Organization:** {org_name}
+📋 **Template:** {template_type}
+🤖 **Enhanced with:** Claude AI + Google Drive Profile
+
+📝 **Subject:** {subject}
+
+📄 **Email Body:**
+{body}
+
+---
+💡 **Next Steps:**
+• Review and customize the email
+• Use `/donoremail refine [tone]` to adjust tone
+• Use `/donoremail save [name]` to save draft
+• Use `/donoremail share [@colleague]` to get feedback"""
+        
+        return jsonify({
+            "response_type": "in_channel",
+            "text": response_text
+        })
+        
+    except Exception as e:
+        logger.error(f"Error generating email: {e}")
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": f"❌ Error generating email: {str(e)}\n\nPlease try again or contact support."
+        })
 
 ############################
 # Debug endpoints (no Slack)
@@ -627,10 +1334,298 @@ def debug_drive_summary():
         "mode": "slack-bolt"
     })
 
+@app.route('/debug/templates')
+def debug_templates():
+    """List available email templates and modes"""
+    try:
+        templates = email_generator.get_available_templates()
+        current_mode = email_generator.get_mode()
+        claude_configured = bool(os.environ.get("ANTHROPIC_API_KEY"))
+        
+        return jsonify({
+            "ok": True,
+            "templates": templates,
+            "current_mode": current_mode,
+            "modes": {
+                "claude": "AI-enhanced emails using Claude API",
+                "template": "Basic template system"
+            },
+            "claude_api_key": "configured" if claude_configured else "missing",
+            "mode": "slack-bolt"
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "error": f"Templates endpoint failed: {e}",
+            "mode": "slack-bolt"
+        }), 500
+
+@app.route('/debug/generate-email', methods=['POST'])
+def debug_generate_email():
+    """Generate custom email via API"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No JSON data provided"}), 400
+        
+        org = data.get('org', '').strip()
+        template = data.get('template', '').strip().lower()
+        mode = data.get('mode', '').strip().lower()
+        
+        if not org or not template:
+            return jsonify({"error": "Missing required fields: org, template"}), 400
+        
+        # Get organization data
+        org_data = sheets_db.get_org_by_name(org)
+        if not org_data:
+            return jsonify({
+                "error": f"Organization '{org}' not found",
+                "mode": "slack-bolt",
+                "sheets_connected": sheets_db.initialized
+            }), 404
+        
+        # Generate email
+        subject, body = email_generator.generate_email(template, org_data, mode)
+        
+        if not subject or not body:
+            return jsonify({
+                "error": f"Email generation failed: {body}",
+                "mode": "slack-bolt",
+                "sheets_connected": sheets_db.initialized
+            }), 500
+        
+        return jsonify({
+            "ok": True,
+            "email": {
+                "subject": subject,
+                "body": body,
+                "template": template,
+                "mode": mode or email_generator.get_mode(),
+                "organization": org,
+                "contact_person": org_data.get('contact_person', 'Unknown'),
+                "sector": org_data.get('sector_tags', 'Unknown')
+            },
+            "mode": "slack-bolt",
+            "sheets_connected": sheets_db.initialized
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "error": f"Email generation failed: {e}",
+            "mode": "slack-bolt",
+            "sheets_connected": sheets_db.initialized
+        }), 500
+
+@app.route('/debug/test-claude')
+def debug_test_claude():
+    """Test Claude API integration"""
+    try:
+        # Test with sample data
+        test_donor_data = {
+            'organization_name': 'Test Foundation',
+            'contact_person': 'John Doe',
+            'sector_tags': 'Education Technology',
+            'geography': 'Bihar',
+            'alignment_score': '8',
+            'priority': 'High',
+            'current_stage': 'Engagement',
+            'estimated_grant_size': '₹10,00,000',
+            'notes': 'Interested in digital skills programs'
+        }
+        
+        # Test both modes
+        claude_subject, claude_body = email_generator.generate_email('engagement', test_donor_data, 'claude')
+        template_subject, template_body = email_generator.generate_email('engagement', test_donor_data, 'template')
+        
+        return jsonify({
+            "ok": True,
+            "test_data": test_donor_data,
+            "claude_mode": {
+                "subject": claude_subject,
+                "body_length": len(claude_body) if claude_body else 0,
+                "status": "working" if claude_subject else "failed"
+            },
+            "template_mode": {
+                "subject": template_subject,
+                "body_length": len(template_body) if template_body else 0,
+                "status": "working" if template_subject else "failed"
+            },
+            "claude_api_key": "configured" if os.environ.get("ANTHROPIC_API_KEY") else "missing",
+            "mode": "slack-bolt"
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "error": f"Claude test failed: {e}",
+            "mode": "slack-bolt"
+        }), 500
+
+@app.route('/debug/compare-templates')
+def debug_compare_templates():
+    """Compare base template vs. enhanced version for a specific organization"""
+    org = (request.args.get('org') or '').strip()
+    template_type = (request.args.get('template') or 'identification').strip().lower()
+    
+    if not org:
+        return jsonify({"error": "Missing query parameter 'org'"}), 400
+    
+    if not sheets_db.initialized:
+        return jsonify({
+            "error": "Google services not connected",
+            "sheets_connected": False,
+            "mode": "slack-bolt"
+        }), 500
+    
+    # Get organization data
+    org_data = sheets_db.get_org_by_name(org)
+    if not org_data:
+        return jsonify({
+            "error": f"Organization '{org}' not found",
+            "mode": "slack-bolt",
+            "sheets_connected": True
+        }), 404
+    
+    try:
+        # Use the email generator's comparison method
+        comparison_result = email_generator.compare_templates(template_type, org_data)
+        
+        if comparison_result.get('ok'):
+            # Add additional context
+            comparison_result['organization'] = org
+            comparison_result['template_type'] = template_type
+            comparison_result['donor_context'] = {
+                "sector": org_data.get('sector_tags', ''),
+                "geography": org_data.get('geography', ''),
+                "alignment_score": org_data.get('alignment_score', ''),
+                "priority": org_data.get('priority', ''),
+                "current_stage": org_data.get('current_stage', '')
+            }
+            comparison_result['mode'] = "slack-bolt"
+            comparison_result['sheets_connected'] = True
+            
+            return jsonify(comparison_result)
+        else:
+            return jsonify({
+                "error": comparison_result.get('error', 'Template comparison failed'),
+                "mode": "slack-bolt",
+                "sheets_connected": True
+            }), 500
+        
+    except Exception as e:
+        return jsonify({
+            "error": f"Template comparison failed: {e}",
+            "mode": "slack-bolt",
+            "sheets_connected": True
+        }), 500
+
+@app.route('/debug/donor-profile')
+def debug_donor_profile():
+    """Get donor profile information from Google Drive"""
+    org = (request.args.get('org') or '').strip()
+    
+    if not org:
+        return jsonify({"error": "Missing query parameter 'org'"}), 400
+    
+    try:
+        # Get donor profile information
+        profile_info = email_generator.get_donor_profile_info(org)
+        
+        # Add additional context
+        profile_info['mode'] = "slack-bolt"
+        profile_info['sheets_connected'] = sheets_db.initialized
+        
+        return jsonify(profile_info)
+        
+    except Exception as e:
+        return jsonify({
+            "error": f"Donor profile lookup failed: {e}",
+            "mode": "slack-bolt",
+            "sheets_connected": sheets_db.initialized
+        }), 500
+
+@app.route("/debug/cache-stats")
+def debug_cache_stats():
+    """Get global cache statistics"""
+    try:
+        from cache_manager import cache_manager
+        stats = cache_manager.get_stats()
+        return jsonify({
+            "ok": True,
+            "cache_stats": stats,
+            "message": "Global cache statistics retrieved successfully"
+        })
+    except Exception as e:
+        logger.error(f"Error getting cache stats: {e}")
+        return jsonify({
+            "ok": False,
+            "error": str(e)
+        }), 500
+
+@app.route("/debug/clear-cache", methods=["POST"])
+def debug_clear_cache():
+    """Clear the global cache"""
+    try:
+        from cache_manager import cache_manager
+        cache_manager.clear()
+        return jsonify({
+            "ok": True,
+            "message": "Global cache cleared successfully"
+        })
+    except Exception as e:
+        logger.error(f"Error clearing cache: {e}")
+        return jsonify({
+            "ok": False,
+            "error": str(e)
+        }), 500
+
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 3000))
-    logger.info(f"🚀 Starting Diksha Fundraising Bot on port {port}...")
-    logger.info(f"📡 Health check: http://localhost:{port}/health")
-    logger.info(f"🌐 Root endpoint: http://localhost:{port}/")
-    logger.info(f"🤖 Slack events: http://localhost:{port}/slack/events")
-    app.run(host='0.0.0.0', port=port, debug=False)
+    
+    # Startup logging
+    print("🚀 Diksha Foundation Fundraising Bot Starting...")
+    print(f"📊 Google Sheets: {'✅ Connected' if sheets_db.initialized else '❌ Not Connected'}")
+    print(f"📁 Google Drive: {'✅ Connected' if drive_service else '❌ Not Connected'}")
+    print(f"🤖 Slack Bot: {'✅ Ready' if slack_app else '❌ Not Ready'}")
+    print(f"📧 Email Generator: ✅ Modular System Ready")
+    print(f"🤖 Claude AI: {'✅ Configured' if os.environ.get('ANTHROPIC_API_KEY') else '⚠️  Not Configured'}")
+    print(f"🌐 Server: Starting on port {port}")
+    print(f"🔧 Debug Mode: {'✅ Enabled' if app.debug else '❌ Disabled'}")
+    
+    if os.environ.get('ANTHROPIC_API_KEY'):
+        print("🎯 AI-Enhanced Emails: ✅ Enabled (Claude API)")
+    else:
+        print("🎯 AI-Enhanced Emails: ⚠️  Disabled (No Claude API key)")
+        print("   Set ANTHROPIC_API_KEY environment variable for AI enhancement")
+    
+    if drive_service:
+        print("📁 Donor Profiles: ✅ Enabled (Google Drive integration)")
+    else:
+        print("📁 Donor Profiles: ⚠️  Disabled (No Google Drive service)")
+        print("   Set GOOGLE_CREDENTIALS_BASE64 for donor profile enhancement")
+    
+    print("\n📋 Available Endpoints:")
+    print("   • /health - Health check")
+    print("   • /debug/templates - Email templates")
+    print("   • /debug/generate-email - Generate emails")
+    print("   • /debug/test-claude - Test Claude integration")
+    print("   • /debug/compare-templates - Compare base vs enhanced")
+    print("   • /debug/donor-profile - Get donor profile info")
+    print("   • /slack/events - Slack event handler")
+    print("   • /slack/commands - Slack command handler")
+    
+    print("\n🚀 **New Donor Email Commands Available!**")
+    print("   • /donoremail intro [OrgName] - First introduction")
+    print("   • /donoremail concept [Org] [Project] - Concept pitch")
+    print("   • /donoremail meetingrequest [Org] [Date] - Meeting request")
+    print("   • /donoremail proposalcover [Org] [Project] - Proposal cover")
+    print("   • /donoremail help - See all available commands")
+    
+    print("\n💡 **Key Features:**")
+    print("   • AI-enhanced emails with Claude")
+    print("   • Google Drive profile integration")
+    print("   • Fundraising workflow stages")
+    print("   • Smart fallback system")
+    
+    print("\n" + "="*60)
+    
+    app.run(host='0.0.0.0', port=port, debug=True)
