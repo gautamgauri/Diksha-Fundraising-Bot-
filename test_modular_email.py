@@ -100,3 +100,4 @@ def test_email_generator():
 
 if __name__ == "__main__":
     test_email_generator()
+

@@ -1,9 +1,46 @@
-flask
-gunicorn
-slack_bolt
-google-auth
-google-api-python-client
-fuzzywuzzy>=0.18.0
-python-Levenshtein>=0.12.0
-anthropic>=0.18.0
-psutil>=5.9.0
+# Diksha Foundation Fundraising Bot - Dependencies
+# Core Flask framework
+Flask==2.3.3
+Werkzeug==2.3.7
+
+# Slack integration
+slack-bolt==1.18.3
+
+# Google API libraries
+google-auth==2.23.4
+google-auth-oauthlib==1.1.0
+google-auth-httplib2==0.1.1
+google-api-python-client==2.108.0
+
+# AI/ML integration
+anthropic==0.7.8
+
+# Data processing
+pandas==2.1.3
+numpy==1.25.2
+
+# HTTP and networking
+requests==2.31.0
+urllib3==2.0.7
+
+# Logging and monitoring
+python-json-logger==2.0.7
+
+# Development and testing (optional)
+python-dotenv==1.0.0
+pytest==7.4.3
+pytest-flask==1.3.0
+
+# Production deployment
+gunicorn==21.2.0
+gevent==23.9.1
+
+# Security
+cryptography==41.0.7
+PyJWT==2.8.0
+
+# Caching (optional)
+redis==5.0.1
+
+# Environment and configuration
+python-decouple==3.8

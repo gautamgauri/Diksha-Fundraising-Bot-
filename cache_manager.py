@@ -172,3 +172,4 @@ class GlobalCacheManager:
 
 # Global instance
 cache_manager = GlobalCacheManager()
+

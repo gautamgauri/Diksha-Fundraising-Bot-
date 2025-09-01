@@ -101,3 +101,4 @@ else:  # DEVELOPMENT
     EMAIL_CONFIG['max_retries'] = 1
     CACHE_CONFIG['profile_timeout'] = 300   # 5 minutes
     LOGGING_CONFIG['level'] = 'DEBUG'
+
