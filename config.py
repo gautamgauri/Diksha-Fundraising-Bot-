@@ -68,8 +68,25 @@ SECURITY_CONFIG = {
     ]
 }
 
-# Get deployment mode from environment
-DEPLOYMENT_MODE = DeploymentMode(os.environ.get('DEPLOYMENT_MODE', 'development').lower())
+# Get deployment mode from environment with proper mapping
+def get_deployment_mode():
+    """Get deployment mode from environment with fallback"""
+    env_mode = os.environ.get('DEPLOYMENT_MODE', 'dev').lower()
+    
+    # Map common environment values to enum values
+    mode_mapping = {
+        'development': 'dev',
+        'dev': 'dev',
+        'staging': 'staging',
+        'staging': 'staging',
+        'production': 'prod',
+        'prod': 'prod'
+    }
+    
+    mapped_mode = mode_mapping.get(env_mode, 'dev')
+    return DeploymentMode(mapped_mode)
+
+DEPLOYMENT_MODE = get_deployment_mode()
 
 # Adjust settings based on deployment mode
 if DEPLOYMENT_MODE == DeploymentMode.PRODUCTION:
