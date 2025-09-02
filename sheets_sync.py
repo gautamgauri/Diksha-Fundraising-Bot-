@@ -15,11 +15,14 @@ try:
     FUZZYWUZZY_AVAILABLE = True
 except ImportError:
     FUZZYWUZZY_AVAILABLE = False
-    logger.warning("⚠️ fuzzywuzzy not available - using basic string matching")
 
 from google_auth import create_google_clients
 
 logger = logging.getLogger(__name__)
+
+# Log fuzzywuzzy availability after logger is defined
+if not FUZZYWUZZY_AVAILABLE:
+    logger.warning("⚠️ fuzzywuzzy not available - using basic string matching")
 
 # Column mappings for the Google Sheet
 COLUMN_MAPPINGS = {

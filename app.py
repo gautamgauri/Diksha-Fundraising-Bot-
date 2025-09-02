@@ -17,6 +17,20 @@ logger = logging.getLogger(__name__)
 # Initialize Flask app
 app = Flask(__name__)
 
+# Import modular components
+try:
+    from deepseek_client import deepseek_client
+    from slack_bot import initialize_slack_bot
+    from context_helpers import get_relevant_donor_context, get_template_context, get_pipeline_insights
+    logger.info("✅ Modular components imported successfully")
+except ImportError as e:
+    logger.error(f"❌ Missing modular component: {e}")
+    logger.error("Please ensure deepseek_client.py, slack_bot.py, and context_helpers.py exist")
+    deepseek_client = None
+    initialize_slack_bot = None
+
+# Natural language processing is now handled by the modular slack_bot.py
+
 # Global error handlers
 @app.errorhandler(500)
 def internal_error(error):
@@ -138,36 +152,23 @@ except Exception as e:
 # Initialize email generator with Drive service
 email_generator = EmailGenerator(drive_service=drive_service)
 
-############################
-# Slack App Configuration
-############################
-slack_bot_token = os.environ.get("SLACK_BOT_TOKEN")
-slack_signing_secret = os.environ.get("SLACK_SIGNING_SECRET")
-
-# Initialize Slack app (only if credentials are available)
-slack_app = None
-slack_handler = None
-
-if slack_bot_token and slack_signing_secret:
+# Initialize Slack bot with dependencies
+slack_bot = None
+if initialize_slack_bot:
     try:
-        # Slack Bolt for easier Slack integration
-        from slack_bolt import App as SlackApp
-        from slack_bolt.adapter.flask import SlackRequestHandler
-        
-        slack_app = SlackApp(
-            token=slack_bot_token,
-            signing_secret=slack_signing_secret
-        )
-        # Create Flask handler
-        slack_handler = SlackRequestHandler(slack_app)
-        logger.info("✅ Slack app initialized with credentials")
+        slack_bot = initialize_slack_bot(sheets_db=sheets_db, email_generator=email_generator)
+        logger.info("✅ Slack bot initialized with dependencies")
     except Exception as e:
-        logger.error(f"❌ Slack initialization failed: {e}")
-        slack_app = None
-        slack_handler = None
+        logger.error(f"❌ Slack bot initialization failed: {e}")
+        slack_bot = None
 else:
-    logger.warning("⚠️  Slack credentials not found. Running in test mode.")
-    logger.info("Set SLACK_BOT_TOKEN and SLACK_SIGNING_SECRET environment variables for full Slack integration.")
+    logger.warning("⚠️ Slack bot initialization function not available")
+
+############################
+# Slack Bot Configuration
+############################
+# Slack bot is now handled by the modular slack_bot.py
+# The global instance is imported from the module
 
 ############################
 # Email Template Functions
@@ -510,17 +511,8 @@ def handle_search_action(query: str) -> str:
 ############################
 # Slack Event Handlers
 ############################
-if slack_app:
-    @slack_app.event("app_mention")
-    def handle_app_mention(event, say):
-        """Handle when the bot is mentioned"""
-        say(f"Hello! I'm the Diksha Fundraising Bot. Use `/pipeline` to manage your fundraising pipeline.")
-
-    @slack_app.event("message")
-    def handle_message(event, say):
-        """Handle general messages (optional)"""
-        # Only respond to messages in specific channels if needed
-        pass
+# Slack event handlers are now handled by the modular slack_bot.py
+# The handlers are automatically set up when the bot is initialized
 
 ############################
 # Flask Routes
@@ -585,10 +577,13 @@ def index():
             "email_generation": "/debug/generate-email",
             "available_templates": "/debug/templates",
             "claude_test": "/debug/test-claude",
+            "deepseek_test": "/debug/test-deepseek",
             "compare_templates": "/debug/compare-templates?org=<org>&template=<type>",
             "donor_profile": "/debug/donor-profile?org=<org>"
         }
     })
+
+# DeepSeek status is now handled by the modular deepseek_client.py
 
 @app.route('/health')
 def health():
@@ -599,9 +594,10 @@ def health():
     
     # Check component health with safety checks
     sheets_status = "connected" if (sheets_db and sheets_db.initialized) else "not_connected"
-    slack_status = "ready" if slack_app else "not_configured"
+    slack_status = "ready" if (slack_bot and slack_bot.is_initialized()) else "not_configured"
     email_status = "ready" if email_generator else "not_available"
     cache_status = "available" if cache_manager else "not_available"
+    deepseek_status = deepseek_client.get_status() if deepseek_client else "not_configured"
     
     # Overall health status
     overall_status = "healthy"
@@ -623,17 +619,20 @@ def health():
             "cache_manager_import": "guarded",
             "command_parser_safety": "implemented",
             "database_fallback": "implemented",
-            "error_handling": "enhanced"
+            "error_handling": "enhanced",
+            "deepseek_integration": "implemented"
         },
         "components": {
             "google_sheets": sheets_status,
             "slack_bot": slack_status,
             "email_generator": email_status,
-            "cache_manager": cache_status
+            "cache_manager": cache_status,
+            "deepseek_api": deepseek_status
         },
         "environment": {
             "google_credentials": "configured" if os.environ.get("GOOGLE_CREDENTIALS_BASE64") else "missing",
             "anthropic_api_key": "configured" if os.environ.get("ANTHROPIC_API_KEY") else "missing",
+            "deepseek_api_key": "configured" if os.environ.get("DEEPSEEK_API_KEY") else "missing",
             "slack_credentials": "configured" if (os.environ.get("SLACK_BOT_TOKEN") and os.environ.get("SLACK_SIGNING_SECRET")) else "missing"
         },
         "security": {
@@ -654,13 +653,16 @@ def health():
 @app.route("/slack/events", methods=["POST"])
 def slack_events():
     """Handle Slack events with signature validation"""
-    if not slack_handler:
+    if not slack_bot or not slack_bot.is_initialized():
         return jsonify({"error": "Slack not configured"}), 503
     
     try:
-        # Slack Bolt automatically validates the request signature
-        # This provides protection against replay attacks and ensures request authenticity
-        return slack_handler.handle(request)
+        # Use the modular Slack bot handler
+        handler = slack_bot.get_handler()
+        if handler:
+            return handler.handle(request)
+        else:
+            return jsonify({"error": "Slack handler not available"}), 503
     except Exception as e:
         logger.error(f"Error handling Slack event: {e}")
         return jsonify({"error": str(e)}), 500
@@ -1788,6 +1790,36 @@ def debug_clear_cache():
             "error": str(e)
         }), 500
 
+# Add debug endpoint for testing DeepSeek
+@app.route('/debug/test-deepseek', methods=['POST'])
+def debug_test_deepseek():
+    """Test DeepSeek API integration"""
+    try:
+        if not deepseek_client:
+            return jsonify({
+                "error": "DeepSeek not configured",
+                "status": "DEEPSEEK_API_KEY not set"
+            }), 503
+        
+        data = request.get_json()
+        message = data.get('message', 'Hello, this is a test message.')
+        context = data.get('context', {})
+        
+        response = deepseek_client.chat_completion(message, context)
+        
+        return jsonify({
+            "ok": True,
+            "message": message,
+            "response": response,
+            "api_status": "working" if response else "failed"
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "error": f"DeepSeek test failed: {e}",
+            "ok": False
+        }), 500
+
 def validate_startup_components():
     """Validate all startup components and return status"""
     validation_results = {
@@ -1796,6 +1828,7 @@ def validate_startup_components():
         "slack_bot": {"status": "❌ Not Available", "details": "Slack not configured"},
         "email_generator": {"status": "❌ Not Available", "details": "Email generator not available"},
         "claude_ai": {"status": "❌ Not Available", "details": "No API key configured"},
+        "deepseek_ai": {"status": "❌ Not Available", "details": "No API key configured"},
         "cache_manager": {"status": "❌ Not Available", "details": "Cache manager not available"},
         "security": {"status": "❌ Not Available", "details": "Security features not configured"},
         "monitoring": {"status": "❌ Not Available", "details": "Monitoring not configured"}
@@ -1812,8 +1845,8 @@ def validate_startup_components():
         validation_results["google_drive"] = {"status": "✅ Connected", "details": "Drive service ready"}
     
     # Check Slack Bot
-    if slack_app:
-        validation_results["slack_bot"] = {"status": "✅ Ready", "details": "Slack integration active"}
+    if slack_bot and slack_bot.is_initialized():
+        validation_results["slack_bot"] = {"status": "✅ Ready", "details": "Modular Slack integration active"}
     
     # Check Email Generator
     if email_generator:
@@ -1823,12 +1856,16 @@ def validate_startup_components():
     if os.environ.get('ANTHROPIC_API_KEY'):
         validation_results["claude_ai"] = {"status": "✅ Configured", "details": "AI enhancement enabled"}
     
+    # Check DeepSeek AI
+    if deepseek_client and deepseek_client.initialized:
+        validation_results["deepseek_ai"] = {"status": "✅ Configured", "details": "Natural language chat enabled"}
+    
     # Check Cache Manager
     if cache_manager:
         validation_results["cache_manager"] = {"status": "✅ Available", "details": "Cache system ready"}
     
     # Check Security Features
-    if slack_signing_secret and slack_bot_token:
+    if slack_bot and slack_bot.is_initialized():
         validation_results["security"] = {"status": "✅ Configured", "details": "Slack signature validation enabled"}
     else:
         validation_results["security"] = {"status": "⚠️ Limited", "details": "Slack signature validation disabled"}
@@ -1858,6 +1895,7 @@ if __name__ == '__main__':
     print(f"\n🔑 Environment Variables:")
     print(f"   GOOGLE_CREDENTIALS_BASE64: {'✅ Set' if os.environ.get('GOOGLE_CREDENTIALS_BASE64') else '❌ Missing'}")
     print(f"   ANTHROPIC_API_KEY: {'✅ Set' if os.environ.get('ANTHROPIC_API_KEY') else '❌ Missing'}")
+    print(f"   DEEPSEEK_API_KEY: {'✅ Set' if os.environ.get('DEEPSEEK_API_KEY') else '❌ Missing'}")
     print(f"   SLACK_BOT_TOKEN: {'✅ Set' if os.environ.get('SLACK_BOT_TOKEN') else '❌ Missing'}")
     print(f"   SLACK_SIGNING_SECRET: {'✅ Set' if os.environ.get('SLACK_SIGNING_SECRET') else '❌ Missing'}")
     
@@ -1867,6 +1905,7 @@ if __name__ == '__main__':
     print("   • /debug/templates - Email templates")
     print("   • /debug/generate-email - Generate emails")
     print("   • /debug/test-claude - Test Claude integration")
+    print("   • /debug/test-deepseek - Test DeepSeek integration")
     print("   • /slack/events - Slack event handler")
     print("   • /slack/commands - Slack command handler")
     
@@ -1879,6 +1918,7 @@ if __name__ == '__main__':
     
     print(f"\n💡 **Key Features:**")
     print("   • AI-enhanced emails with Claude")
+    print("   • Natural language chat with DeepSeek")
     print("   • Google Drive profile integration")
     print("   • Fundraising workflow stages")
     print("   • Smart fallback system")
