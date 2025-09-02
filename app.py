@@ -52,6 +52,10 @@ def not_found(error):
             "/health",
             "/debug/sheets-test",
             "/debug/templates",
+            "/debug/context",
+            "/debug/context-test",
+            "/debug/cache-stats",
+            "/debug/test-deepseek",
             "/slack/events",
             "/slack/commands"
         ],
@@ -195,196 +199,9 @@ def get_available_templates():
 ############################
 # Slack Command Handlers
 ############################
-if slack_app:
-    @slack_app.command("/pipeline")
-    def handle_pipeline_command(ack, command):
-        """Handle /pipeline command with various actions"""
-        ack()
-        
-        try:
-            # Parse command text
-            text = command.get('text', '').strip()
-            if not text:
-                # Show help
-                help_text = """
-*Diksha Foundation Pipeline Commands*
+# Slack command handlers are now handled by the modular slack_bot.py
+# The handlers are automatically set up when the bot is initialized
 
-*Available Actions:*
-• `/pipeline status <organization>` - Check organization status
-• `/pipeline assign <organization> | <team_member>` - Assign organization to team member
-• `/pipeline next <organization>` - Move to next stage
-• `/pipeline stage <organization> | <stage>` - Set specific stage
-• `/pipeline search <query>` - Search organizations
-• `/pipeline email <organization> | <template> | [mode]` - Generate custom email
-• `/pipeline mode [claude|template]` - Set email generation mode
-
-*Email Templates:*
-• `identification` - Initial outreach
-• `engagement` - Relationship building
-• `proposal` - Formal proposal
-• `followup` - Follow-up messages
-• `celebration` - Grant secured
-
-*Email Modes:*
-• `claude` - AI-enhanced emails (default)
-• `template` - Basic template system
-
-*Examples:*
-• `/pipeline status Wipro Foundation`
-• `/pipeline email Tata Trust | identification | claude`
-• `/pipeline mode template`
-                """
-                slack_app.client.chat_postEphemeral(
-                    channel=command['user_id'],
-                    user=command['user_id'],
-                    text=help_text
-                )
-                return
-            
-            # Split command into parts
-            parts = [p.strip() for p in text.split('|')]
-            action = parts[0].lower()
-            
-            if action == "status":
-                if len(parts) < 2:
-                    slack_app.client.chat_postEphemeral(
-                        channel=command['user_id'],
-                        user=command['user_id'],
-                        text="❌ Please specify an organization: `/pipeline status <organization>`"
-                    )
-                    return
-                
-                org_name = parts[1]
-                result = handle_status_action(org_name)
-                slack_app.client.chat_postEphemeral(
-                    channel=command['user_id'],
-                    user=command['user_id'],
-                    text=result
-                )
-                
-            elif action == "assign":
-                if len(parts) < 3:
-                    slack_app.client.chat_postEphemeral(
-                        channel=command['user_id'],
-                        user=command['user_id'],
-                        text="❌ Please specify organization and team member: `/pipeline assign <organization> | <team_member>`"
-                    )
-                    return
-                
-                org_name = parts[1]
-                team_member = parts[2]
-                result = handle_assign_action(org_name, team_member)
-                slack_app.client.chat_postEphemeral(
-                    channel=command['user_id'],
-                    user=command['user_id'],
-                    text=result
-                )
-                
-            elif action == "next":
-                if len(parts) < 2:
-                    slack_app.client.chat_postEphemeral(
-                        channel=command['user_id'],
-                        user=command['user_id'],
-                        text="❌ Please specify an organization: `/pipeline next <organization>`"
-                    )
-                    return
-                
-                org_name = parts[1]
-                result = handle_next_action(org_name)
-                slack_app.client.chat_postEphemeral(
-                    channel=command['user_id'],
-                    user=command['user_id'],
-                    text=result
-                )
-                
-            elif action == "stage":
-                if len(parts) < 3:
-                    slack_app.client.chat_postEphemeral(
-                        channel=command['user_id'],
-                        user=command['user_id'],
-                        text="❌ Please specify organization and stage: `/pipeline stage <organization> | <stage>`"
-                    )
-                    return
-                
-                org_name = parts[1]
-                stage = parts[2]
-                result = handle_stage_action(org_name, stage)
-                slack_app.client.chat_postEphemeral(
-                    channel=command['user_id'],
-                    user=command['user_id'],
-                    text=result
-                )
-                
-            elif action == "search":
-                if len(parts) < 2:
-                    slack_app.client.chat_postEphemeral(
-                        channel=command['user_id'],
-                        user=command['user_id'],
-                        text="❌ Please specify a search query: `/pipeline search <query>`"
-                    )
-                    return
-                
-                query = parts[1]
-                result = handle_search_action(query)
-                slack_app.client.chat_postEphemeral(
-                    channel=command['user_id'],
-                    user=command['user_id'],
-                    text=result
-                )
-                
-            elif action == "email":
-                if len(parts) < 3:
-                    slack_app.client.chat_postEphemeral(
-                        channel=command['user_id'],
-                        user=command['user_id'],
-                        text="❌ Please specify organization and template: `/pipeline email <organization> | <template> | [mode]`"
-                    )
-                    return
-                
-                org_name = parts[1]
-                template_type = parts[2]
-                mode = parts[3] if len(parts) > 3 else None
-                
-                result = handle_email_action(org_name, template_type, mode)
-                slack_app.client.chat_postEphemeral(
-                    channel=command['user_id'],
-                    user=command['user_id'],
-                    text=result
-                )
-                
-            elif action == "mode":
-                if len(parts) < 2:
-                    # Show current mode
-                    current_mode = email_generator.get_mode()
-                    slack_app.client.chat_postEphemeral(
-                        channel=command['user_id'],
-                        user=command['user_id'],
-                        text=f"📧 Current email generation mode: *{current_mode}*"
-                    )
-                    return
-                
-                mode = parts[1]
-                result = email_generator.set_mode(mode)
-                slack_app.client.chat_postEphemeral(
-                    channel=command['user_id'],
-                    user=command['user_id'],
-                    text=f"🔧 {result}"
-                )
-                
-            else:
-                slack_app.client.chat_postEphemeral(
-                    channel=command['user_id'],
-                    user=command['user_id'],
-                    text=f"❌ Unknown action '{action}'. Use `/pipeline` for help."
-                )
-                
-        except Exception as e:
-            logger.error(f"Pipeline command error: {e}")
-            slack_app.client.chat_postEphemeral(
-                channel=command['user_id'],
-                user=command['user_id'],
-                text=f"❌ Error processing command: {e}"
-            )
 
 def handle_email_action(org_name: str, template_type: str, mode: str = None) -> str:
     """Handle email generation action"""
@@ -426,87 +243,7 @@ def handle_email_action(org_name: str, template_type: str, mode: str = None) -> 
         logger.error(f"Email action error: {e}")
         return f"❌ Error generating email: {e}"
 
-def handle_status_action(org_name: str) -> str:
-    """Handle status action"""
-    try:
-        org_data = sheets_db.get_org_by_name(org_name)
-        if org_data:
-            return f"""🏢 *{org_data['organization_name']}*
-📊 Stage: {org_data['current_stage']}
-👤 Assigned: {org_data['assigned_to']}
-📅 Next: {org_data['next_action']} on {org_data['next_action_date']}
-📧 Email: {org_data['email']}
-📞 Phone: {org_data['phone']}
-👥 Contact: {org_data['contact_person']}
-🏷️ Sector: {org_data['sector_tags']}
-🌍 Geography: {org_data['geography']}
-📝 Notes: {org_data['notes']}"""
-        else:
-            # Try to find similar organizations
-            matches = sheets_db.find_org(org_name)
-            if matches:
-                return f"❌ Organization '{org_name}' not found. Similar organizations:\n" + "\n".join([f"• {match['organization_name']}" for match in matches])
-            else:
-                return f"❌ Organization '{org_name}' not found in pipeline."
-    except Exception as e:
-        logger.error(f"Status action error: {e}")
-        return f"❌ Error getting status: {e}"
 
-def handle_assign_action(org_name: str, team_member: str) -> str:
-    """Handle assign action"""
-    try:
-        if sheets_db.update_org_field(org_name, 'assigned_to', team_member):
-            return f"✅ Assigned *{org_name}* to {team_member}"
-        else:
-            return f"❌ Failed to assign {org_name}. Organization not found or update failed."
-    except Exception as e:
-        logger.error(f"Assign action error: {e}")
-        return f"❌ Error assigning organization: {e}"
-
-def handle_next_action(org_name: str) -> str:
-    """Handle next action"""
-    try:
-        # For now, just show current status
-        org_data = sheets_db.get_org_by_name(org_name)
-        if org_data:
-            return f"""📅 *Next Action for {org_name}*
-Current: {org_data['next_action']} on {org_data['next_action_date']}
-
-Use `/pipeline stage {org_name} | <new_stage>` to update stage
-Use `/pipeline assign {org_name} | <team_member>` to reassign"""
-        else:
-            return f"❌ Organization '{org_name}' not found."
-    except Exception as e:
-        logger.error(f"Next action error: {e}")
-        return f"❌ Error getting next action: {e}"
-
-def handle_stage_action(org_name: str, stage: str) -> str:
-    """Handle stage action"""
-    try:
-        org_data = sheets_db.get_org_by_name(org_name)
-        if org_data:
-            old_stage = org_data['current_stage']
-            if sheets_db.update_org_field(org_name, 'current_stage', stage):
-                return f"🔄 Stage updated for *{org_name}*:\n• From: {old_stage}\n• To: {stage}"
-            else:
-                return f"❌ Failed to update stage for {org_name}."
-        else:
-            return f"❌ Organization '{org_name}' not found in pipeline."
-    except Exception as e:
-        logger.error(f"Stage action error: {e}")
-        return f"❌ Error updating stage: {e}"
-
-def handle_search_action(query: str) -> str:
-    """Handle search action"""
-    try:
-        matches = sheets_db.find_org(query)
-        if matches:
-            return f"🔍 Organizations matching '{query}':\n" + "\n".join([f"• {match['organization_name']} ({match['current_stage']})" for match in matches])
-        else:
-            return f"🔍 No organizations found matching '{query}'"
-    except Exception as e:
-        logger.error(f"Search action error: {e}")
-        return f"❌ Error searching: {e}"
 
 ############################
 # Slack Event Handlers
@@ -603,7 +340,7 @@ def health():
     overall_status = "healthy"
     if sheets_status == "not_connected":
         overall_status = "degraded"
-    if not slack_app and not email_generator:
+    if not slack_bot and not email_generator:
         overall_status = "unhealthy"
     
     return jsonify({
@@ -636,7 +373,7 @@ def health():
             "slack_credentials": "configured" if (os.environ.get("SLACK_BOT_TOKEN") and os.environ.get("SLACK_SIGNING_SECRET")) else "missing"
         },
         "security": {
-            "slack_signature_validation": "enabled" if (slack_signing_secret and slack_bot_token) else "disabled",
+            "slack_signature_validation": "enabled" if (os.environ.get("SLACK_SIGNING_SECRET") and os.environ.get("SLACK_BOT_TOKEN")) else "disabled",
             "input_sanitization": "active",
             "rate_limiting": "basic",
             "error_exposure": "limited"
@@ -1818,6 +1555,85 @@ def debug_test_deepseek():
         return jsonify({
             "error": f"DeepSeek test failed: {e}",
             "ok": False
+        }), 500
+
+# Add debug endpoint for testing context helpers
+@app.route('/debug/context', methods=['GET'])
+def debug_context():
+    """Test context helper functions with current dependencies"""
+    try:
+        # Get query parameter for donor context
+        query = request.args.get("q", "test query")
+        
+        # Test all context helper functions
+        donor_context = get_relevant_donor_context(query, sheets_db)
+        template_context = get_template_context(email_generator)
+        pipeline_context = get_pipeline_insights(sheets_db)
+        
+        return jsonify({
+            "ok": True,
+            "query": query,
+            "context_data": {
+                "donor_context": donor_context,
+                "template_context": template_context,
+                "pipeline_context": pipeline_context
+            },
+            "dependencies_status": {
+                "sheets_db": "✅ Available" if sheets_db and sheets_db.initialized else "❌ Not Available",
+                "email_generator": "✅ Available" if email_generator else "❌ Not Available"
+            },
+            "message": "Context helper functions executed successfully"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in context debug endpoint: {e}")
+        return jsonify({
+            "ok": False,
+            "error": f"Context debug failed: {e}",
+            "dependencies_status": {
+                "sheets_db": "❌ Error" if sheets_db is None else ("✅ Available" if sheets_db.initialized else "❌ Not Initialized"),
+                "email_generator": "❌ Error" if email_generator is None else "✅ Available"
+            }
+        }), 500
+
+# Add debug endpoint for testing context helpers with POST for complex queries
+@app.route('/debug/context-test', methods=['POST'])
+def debug_context_test():
+    """Test context helper functions with POST data for complex queries"""
+    try:
+        data = request.get_json() or {}
+        query = data.get("query", "Wipro Foundation")
+        test_mode = data.get("mode", "all")  # all, donor, template, pipeline
+        
+        results = {}
+        
+        if test_mode in ["all", "donor"]:
+            results["donor_context"] = get_relevant_donor_context(query, sheets_db)
+        
+        if test_mode in ["all", "template"]:
+            results["template_context"] = get_template_context(email_generator)
+        
+        if test_mode in ["all", "pipeline"]:
+            results["pipeline_context"] = get_pipeline_insights(sheets_db)
+        
+        return jsonify({
+            "ok": True,
+            "test_mode": test_mode,
+            "query": query,
+            "results": results,
+            "dependencies_status": {
+                "sheets_db": "✅ Available" if sheets_db and sheets_db.initialized else "❌ Not Available",
+                "email_generator": "✅ Available" if email_generator else "❌ Not Available"
+            },
+            "message": f"Context test completed for mode: {test_mode}"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in context test endpoint: {e}")
+        return jsonify({
+            "ok": False,
+            "error": f"Context test failed: {e}",
+            "test_mode": data.get("mode", "unknown") if 'data' in locals() else "unknown"
         }), 500
 
 def validate_startup_components():
