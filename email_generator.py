@@ -183,7 +183,26 @@ class EmailGenerator:
         return self.enhancement_mode
     
     def get_available_templates(self) -> Dict[str, str]:
-        """Get available email templates"""
+        """Get available email templates - combines Drive templates with hardcoded fallbacks"""
+        try:
+            # First, try to get templates from Drive
+            drive_templates = self._get_templates_from_drive()
+            
+            # If Drive templates found, use them
+            if drive_templates:
+                logger.info(f"Found {len(drive_templates)} templates from Drive")
+                return drive_templates
+            
+            # Fallback to hardcoded templates if Drive is not available
+            logger.info("Using hardcoded template fallbacks")
+            return self._get_hardcoded_templates()
+            
+        except Exception as e:
+            logger.error(f"Error getting templates: {e}, using hardcoded fallbacks")
+            return self._get_hardcoded_templates()
+    
+    def _get_hardcoded_templates(self) -> Dict[str, str]:
+        """Get hardcoded template definitions as fallback"""
         return {
             # Stage 1: Prospecting / Outreach
             "identification": "Initial outreach and introduction",
@@ -209,6 +228,190 @@ class EmailGenerator:
             "invite": "Invite donor to events",
             "festival_greeting": "Donor-friendly relationship building"
         }
+    
+    def _get_templates_from_drive(self) -> Dict[str, str]:
+        """Read actual template content from Drive Templates folder"""
+        if not self.drive_service:
+            logger.warning("Google Drive service not configured, skipping Drive templates")
+            return {}
+        
+        try:
+            # Search for Templates folder in root or common locations
+            templates_folder = self._find_templates_folder()
+            if not templates_folder:
+                logger.info("Templates folder not found in Drive")
+                return {}
+            
+            # Get template files from the folder
+            template_files = self._get_template_files_from_folder(templates_folder['id'])
+            
+            # Extract and process template content
+            templates = {}
+            for file_info in template_files:
+                template_name = self._extract_template_name(file_info['name'])
+                template_content = self._extract_template_content(file_info)
+                
+                if template_content:
+                    templates[template_name] = template_content
+                    logger.info(f"Loaded template: {template_name} from {file_info['name']}")
+            
+            return templates
+            
+        except Exception as e:
+            logger.error(f"Error reading templates from Drive: {e}")
+            return {}
+    
+    def _find_templates_folder(self) -> Optional[Dict[str, Any]]:
+        """Find the Templates folder in Google Drive"""
+        try:
+            # Common folder names for templates
+            possible_names = [
+                "Templates",
+                "Email Templates", 
+                "Email_Templates",
+                "Templates/Email_Templates",
+                "Fundraising Templates"
+            ]
+            
+            for folder_name in possible_names:
+                query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+                results = self.drive_service.files().list(
+                    q=query,
+                    spaces='drive',
+                    fields='files(id, name, parents)'
+                ).execute()
+                
+                if results.get('files'):
+                    folder = results['files'][0]
+                    logger.info(f"Found templates folder: {folder['name']} (ID: {folder['id']})")
+                    return folder
+            
+            # If not found in root, search in subfolders
+            query = "mimeType='application/vnd.google-apps.folder' and name contains 'Template' and trashed=false"
+            results = self.drive_service.files().list(
+                q=query,
+                spaces='drive',
+                fields='files(id, name, parents)'
+            ).execute()
+            
+            if results.get('files'):
+                folder = results['files'][0]
+                logger.info(f"Found templates folder in subfolder: {folder['name']} (ID: {folder['id']})")
+                return folder
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error finding templates folder: {e}")
+            return None
+    
+    def _get_template_files_from_folder(self, folder_id: str) -> List[Dict[str, Any]]:
+        """Get template files from a specific folder"""
+        try:
+            # Search for document files in the templates folder
+            query = f"'{folder_id}' in parents and (mimeType contains 'document' or mimeType contains 'pdf' or mimeType contains 'text') and trashed=false"
+            
+            results = self.drive_service.files().list(
+                q=query,
+                spaces='drive',
+                fields='files(id, name, mimeType, webViewLink, createdTime, modifiedTime)',
+                orderBy='modifiedTime desc'
+            ).execute()
+            
+            files = results.get('files', [])
+            logger.info(f"Found {len(files)} template files in folder {folder_id}")
+            return files
+            
+        except Exception as e:
+            logger.error(f"Error getting template files from folder: {e}")
+            return []
+    
+    def _extract_template_name(self, filename: str) -> str:
+        """Extract template name from filename"""
+        # Remove file extensions
+        name = filename.replace('.docx', '').replace('.pdf', '').replace('.txt', '')
+        
+        # Remove common prefixes/suffixes
+        name = name.replace('Template', '').replace('Email', '').replace('_', ' ').replace('-', ' ')
+        
+        # Convert to lowercase key
+        name = name.strip().lower()
+        
+        # Map common variations to standard names
+        name_mapping = {
+            'identification': 'identification',
+            'intro': 'intro',
+            'introduction': 'intro',
+            'engagement': 'engagement',
+            'proposal': 'proposal',
+            'followup': 'followup',
+            'follow up': 'followup',
+            'follow-up': 'followup',
+            'meeting request': 'meeting_request',
+            'meeting_request': 'meeting_request',
+            'celebration': 'celebration',
+            'impact story': 'impact_story',
+            'impact_story': 'impact_story'
+        }
+        
+        return name_mapping.get(name, name)
+    
+    def _extract_template_content(self, file_info: Dict[str, Any]) -> Optional[str]:
+        """Extract content from template file"""
+        try:
+            file_id = file_info['id']
+            mime_type = file_info['mimeType']
+            
+            if mime_type == 'application/vnd.google-apps.document':
+                # Google Docs - export as plain text
+                response = self.drive_service.files().export_media(
+                    fileId=file_id,
+                    mimeType='text/plain'
+                ).execute()
+                return response.decode('utf-8')
+                
+            elif mime_type == 'application/pdf':
+                # PDF - export as plain text (basic extraction)
+                response = self.drive_service.files().export_media(
+                    fileId=file_id,
+                    mimeType='text/plain'
+                ).execute()
+                return response.decode('utf-8')
+                
+            elif mime_type == 'text/plain':
+                # Plain text file
+                response = self.drive_service.files().get_media(fileId=file_id).execute()
+                return response.decode('utf-8')
+                
+            else:
+                logger.warning(f"Unsupported file type for template: {mime_type}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error extracting content from template file {file_info.get('name', 'unknown')}: {e}")
+            return None
+    
+    def get_template_content(self, template_name: str) -> Optional[str]:
+        """Get the actual content of a specific template"""
+        try:
+            # First check if we have the template content loaded
+            templates = self.get_available_templates()
+            
+            # If templates is a dict of content (from Drive), return the content
+            if isinstance(templates.get(template_name), str) and len(templates[template_name]) > 50:
+                # This looks like actual content, not just a description
+                return templates[template_name]
+            
+            # If not, try to get from Drive directly
+            if self.drive_service:
+                drive_templates = self._get_templates_from_drive()
+                return drive_templates.get(template_name)
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error getting template content for {template_name}: {e}")
+            return None
     
     def generate_email(self, template_type: str, donor_data: Dict[str, Any], mode: Optional[str] = None) -> Tuple[str, str]:
         """Generate email based on template type and donor data"""
@@ -466,8 +669,18 @@ class EmailGenerator:
             
             client = anthropic.Anthropic(api_key=self.claude_api_key)
             
-            # First get the base template
-            base_subject, base_body = self._generate_custom_email(template_type, donor_data)
+            # Try to get actual template content from Drive first
+            drive_template_content = self.get_template_content(template_type)
+            
+            if drive_template_content:
+                logger.info(f"Using Drive template content for {template_type}")
+                # Use Drive template as base
+                base_subject, base_body = self._generate_from_drive_template(template_type, donor_data, drive_template_content)
+            else:
+                logger.info(f"No Drive template found for {template_type}, using hardcoded template")
+                # Fallback to hardcoded template
+                base_subject, base_body = self._generate_custom_email(template_type, donor_data)
+            
             if not base_subject or not base_body:
                 logger.warning("Base template generation failed, falling back to template system")
                 return self._generate_custom_email(template_type, donor_data)
@@ -517,6 +730,71 @@ class EmailGenerator:
         except Exception as e:
             logger.error(f"Claude API error: {e}, falling back to template system")
             return self._generate_custom_email(template_type, donor_data)
+    
+    def _generate_from_drive_template(self, template_type: str, donor_data: Dict[str, Any], template_content: str) -> Tuple[str, str]:
+        """Generate email using actual template content from Drive"""
+        try:
+            # Parse the template content to extract subject and body
+            subject, body = self._parse_drive_template_content(template_content)
+            
+            if not subject or not body:
+                logger.warning(f"Failed to parse Drive template content for {template_type}")
+                return "", f"Template parsing failed for {template_type}"
+            
+            # Customize the template with donor data
+            customized_subject = self._customize_subject(subject, donor_data)
+            customized_body = self._customize_body(body, donor_data)
+            
+            logger.info(f"Successfully generated email from Drive template: {template_type}")
+            return customized_subject, customized_body
+            
+        except Exception as e:
+            logger.error(f"Error generating from Drive template {template_type}: {e}")
+            return "", f"Drive template generation failed: {str(e)}"
+    
+    def _parse_drive_template_content(self, template_content: str) -> Tuple[str, str]:
+        """Parse Drive template content to extract subject and body"""
+        try:
+            lines = template_content.split('\n')
+            subject = ""
+            body = ""
+            
+            current_section = None
+            for line in lines:
+                line = line.strip()
+                
+                # Look for subject indicators
+                if any(keyword in line.lower() for keyword in ['subject:', 'title:', 'email subject:']):
+                    subject = line.split(':', 1)[1].strip() if ':' in line else line
+                    current_section = "body"
+                    continue
+                
+                # Look for body section indicators
+                if any(keyword in line.lower() for keyword in ['body:', 'content:', 'message:', 'email body:']):
+                    current_section = "body"
+                    continue
+                
+                # If we have a subject and we're in body section, add to body
+                if current_section == "body" and line:
+                    body += line + "\n"
+                
+                # If we don't have a subject yet and line looks like a subject, use it
+                elif not subject and line and len(line) < 100 and not line.startswith('Dear'):
+                    subject = line
+            
+            # If no subject found, generate a default one
+            if not subject:
+                subject = "Partnership Opportunity - Diksha Foundation"
+            
+            # If no body found, use the entire content as body
+            if not body:
+                body = template_content
+            
+            return subject, body.strip()
+            
+        except Exception as e:
+            logger.error(f"Error parsing Drive template content: {e}")
+            return "Partnership Opportunity", template_content
     
     def _parse_claude_response(self, response_text: str) -> Tuple[str, str, str]:
         """Parse Claude's response to extract subject, body, and signature"""

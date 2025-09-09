@@ -63,7 +63,7 @@ def get_relevant_donor_context(query: str, sheets_db=None) -> dict:
     return context
 
 def get_template_context(email_generator=None) -> dict:
-    """Get available email templates information"""
+    """Get available email templates information with enhanced Drive template support"""
     try:
         if not email_generator:
             return {}
@@ -71,9 +71,26 @@ def get_template_context(email_generator=None) -> dict:
         templates = email_generator.get_available_templates()
         current_mode = email_generator.get_mode()
         
+        # Check if we have actual template content from Drive
+        drive_templates = {}
+        template_sources = {}
+        
+        for template_name in templates.keys():
+            template_content = email_generator.get_template_content(template_name)
+            if template_content and len(template_content) > 50:
+                # This is actual content from Drive
+                drive_templates[template_name] = True
+                template_sources[template_name] = "Drive"
+            else:
+                # This is a hardcoded description
+                template_sources[template_name] = "Hardcoded"
+        
         return {
             'available_templates': templates,
             'current_mode': current_mode,
+            'drive_templates_available': bool(drive_templates),
+            'template_sources': template_sources,
+            'drive_template_count': len(drive_templates),
             'template_descriptions': {
                 'identification': 'Initial outreach to new prospects',
                 'engagement': 'Building relationships and sharing concepts',

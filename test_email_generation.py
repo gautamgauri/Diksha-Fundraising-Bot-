@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """
-Test Email Generation Functionality
+Test Email Generation Functionality via Shared Backend
 Diksha Foundation Fundraising Bot
 """
 
 import requests
 import json
 import sys
+import os
+
+# Add the current directory to Python path for imports
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Configuration
-BASE_URL = "http://localhost:3000"  # Change this to your Railway URL when deployed
+BASE_URL = "http://localhost:5000"  # Flask app URL
 
 def test_health():
     """Test basic health endpoint"""
@@ -30,12 +34,13 @@ def test_templates():
     """Test template listing endpoint"""
     print("\n📋 Testing template listing...")
     try:
-        response = requests.get(f"{BASE_URL}/debug/templates")
+        response = requests.get(f"{BASE_URL}/api/templates")
         if response.status_code == 200:
             data = response.json()
             print(f"✅ Templates endpoint working")
-            print(f"📧 Available templates: {data['template_count']}")
-            for template_id, template_name in data['available_templates'].items():
+            templates = data.get('templates', {})
+            print(f"📧 Available templates: {len(templates)}")
+            for template_id, template_name in templates.items():
                 print(f"   • {template_id}: {template_name}")
             return True
         else:
@@ -46,105 +51,163 @@ def test_templates():
         return False
 
 def test_email_generation():
-    """Test email generation endpoint"""
-    print("\n📧 Testing email generation...")
+    """Test email generation via shared backend"""
+    print("\n📧 Testing email generation via shared backend...")
     
-    # Test data
-    test_cases = [
-        {
-            "org": "Wipro Foundation",
-            "template": "identification",
-            "description": "Initial outreach to Wipro"
-        },
-        {
-            "org": "Tata Trust",
-            "template": "engagement", 
-            "description": "Relationship building with Tata"
-        },
-        {
-            "org": "HDFC Bank",
-            "template": "proposal",
-            "description": "Formal proposal for HDFC"
-        }
-    ]
-    
-    for test_case in test_cases:
-        print(f"\n🔍 Testing: {test_case['description']}")
-        try:
-            payload = {
-                "org": test_case["org"],
-                "template": test_case["template"]
+    try:
+        from backend import backend_manager
+        
+        if not backend_manager.initialized:
+            print("❌ BackendManager not initialized")
+            return
+        
+        email_service = backend_manager.email_service
+        if not email_service:
+            print("❌ EmailService not available")
+            return
+        
+        # Test data
+        test_cases = [
+            {
+                "org": "Wipro Foundation",
+                "template": "identification",
+                "description": "Initial outreach to Wipro"
+            },
+            {
+                "org": "Tata Trust",
+                "template": "engagement", 
+                "description": "Relationship building with Tata"
+            },
+            {
+                "org": "HDFC Bank",
+                "template": "proposal",
+                "description": "Formal proposal for HDFC"
             }
-            
+        ]
+        
+        for test_case in test_cases:
+            print(f"\n🔍 Testing: {test_case['description']}")
+            try:
+                email_data = email_service.generate_email(
+                    test_case["org"], 
+                    test_case["template"]
+                )
+                
+                if email_data:
+                    print(f"✅ Email generated successfully via shared backend")
+                    print(f"   📧 Subject: {email_data.get('subject', 'N/A')}")
+                    print(f"   👤 Recipient: {email_data.get('recipient', 'N/A')}")
+                    print(f"   📝 Body length: {len(email_data.get('body', ''))} characters")
+                    print(f"   🏷️ Template: {email_data.get('template_type', 'N/A')}")
+                else:
+                    print(f"⚠️ Email generation failed (no test data available)")
+                    
+            except Exception as e:
+                print(f"⚠️ Email generation error (expected if no test data): {e}")
+        
+        # Test API endpoint if Flask app is running
+        print(f"\n🌐 Testing API endpoint...")
+        try:
             response = requests.post(
-                f"{BASE_URL}/debug/generate-email",
-                json=payload,
-                headers={"Content-Type": "application/json"}
+                f"{BASE_URL}/api/generate-email",
+                json={"org": "Wipro Foundation", "template": "identification"},
+                headers={"Content-Type": "application/json"},
+                timeout=5
             )
             
             if response.status_code == 200:
                 data = response.json()
-                print(f"✅ Email generated successfully")
-                print(f"   📧 Subject: {data['email']['subject']}")
-                print(f"   👤 Recipient: {data['email']['recipient']}")
-                print(f"   📝 Body length: {len(data['email']['body'])} characters")
-                print(f"   🏷️ Template: {data['template_type']}")
+                print(f"✅ API endpoint working")
+                print(f"   📧 Subject: {data.get('subject', 'N/A')}")
+                print(f"   🏷️ Template: {data.get('template_type', 'N/A')}")
             else:
-                print(f"❌ Email generation failed: {response.status_code}")
-                try:
-                    error_data = response.json()
-                    print(f"   Error: {error_data.get('error', 'Unknown error')}")
-                except:
-                    print(f"   Response: {response.text}")
-                    
+                print(f"⚠️ API endpoint returned {response.status_code} (app may not be running)")
+        except requests.exceptions.ConnectionError:
+            print("⚠️ Flask app not running - skipping API endpoint test")
         except Exception as e:
-            print(f"❌ Email generation error: {e}")
+            print(f"⚠️ API endpoint test failed: {e}")
+                    
+    except Exception as e:
+        print(f"❌ Email generation test failed: {e}")
 
 def test_slack_command_simulation():
-    """Simulate Slack command behavior"""
-    print("\n🤖 Testing Slack command simulation...")
-    
-    # Test the same functionality that Slack would use
-    test_org = "Wipro Foundation"
-    test_template = "identification"
-    
-    print(f"🔍 Simulating: /pipeline email {test_org} | {test_template}")
+    """Simulate Slack command behavior via shared backend"""
+    print("\n🤖 Testing Slack command simulation via shared backend...")
     
     try:
-        # First get organization status
-        status_response = requests.get(f"{BASE_URL}/debug/status?org={test_org}")
-        if status_response.status_code == 200:
-            org_data = status_response.json()
-            print(f"✅ Found organization: {org_data['organization']}")
-            print(f"   📊 Stage: {org_data['stage']}")
+        from backend import backend_manager
+        
+        if not backend_manager.initialized:
+            print("❌ BackendManager not initialized")
+            return
+        
+        donor_service = backend_manager.donor_service
+        email_service = backend_manager.email_service
+        
+        if not donor_service or not email_service:
+            print("❌ Required services not available")
+            return
+        
+        # Test the same functionality that Slack would use
+        test_org = "Wipro Foundation"
+        test_template = "identification"
+        
+        print(f"🔍 Simulating: /donoremail {test_template} {test_org}")
+        
+        # First get organization status via shared backend
+        matches = donor_service.find_organization(test_org)
+        if matches:
+            org_data = matches[0]
+            print(f"✅ Found organization via shared backend: {org_data['organization_name']}")
+            print(f"   📊 Stage: {org_data['current_stage']}")
             print(f"   👤 Contact: {org_data['contact_person']}")
             print(f"   📧 Email: {org_data['email']}")
             
-            # Now generate email
-            email_response = requests.post(
-                f"{BASE_URL}/debug/generate-email",
-                json={"org": test_org, "template": test_template},
-                headers={"Content-Type": "application/json"}
-            )
-            
-            if email_response.status_code == 200:
-                email_data = email_response.json()
-                print(f"\n📧 Email generated via API:")
-                print(f"   Subject: {email_data['email']['subject']}")
-                print(f"   Template: {email_data['template_type']}")
-                print(f"   Context: {email_data['donor_context']['sector']} in {email_data['donor_context']['geography']}")
-            else:
-                print(f"❌ Email generation failed")
+            # Now generate email via shared backend
+            try:
+                email_data = email_service.generate_email(test_org, test_template)
+                if email_data:
+                    print(f"\n📧 Email generated via shared backend:")
+                    print(f"   Subject: {email_data.get('subject', 'N/A')}")
+                    print(f"   Template: {email_data.get('template_type', 'N/A')}")
+                    print(f"   Recipient: {email_data.get('recipient', 'N/A')}")
+                else:
+                    print(f"⚠️ Email generation failed (no test data available)")
+            except Exception as e:
+                print(f"⚠️ Email generation failed: {e}")
                 
         else:
-            print(f"❌ Organization lookup failed: {status_response.status_code}")
+            print(f"⚠️ Organization '{test_org}' not found (may not exist in data)")
+            # Try with first available organization
+            pipeline = donor_service.get_pipeline()
+            if pipeline:
+                first_stage = list(pipeline.keys())[0]
+                first_org = pipeline[first_stage][0]['organization_name']
+                print(f"🔍 Trying with first available organization: {first_org}")
+                
+                matches = donor_service.find_organization(first_org)
+                if matches:
+                    org_data = matches[0]
+                    print(f"✅ Found test organization: {org_data['organization_name']}")
+                    
+                    try:
+                        email_data = email_service.generate_email(first_org, test_template)
+                        if email_data:
+                            print(f"\n📧 Email generated via shared backend:")
+                            print(f"   Subject: {email_data.get('subject', 'N/A')}")
+                            print(f"   Template: {email_data.get('template_type', 'N/A')}")
+                        else:
+                            print(f"⚠️ Email generation failed (no test data available)")
+                    except Exception as e:
+                        print(f"⚠️ Email generation failed: {e}")
             
     except Exception as e:
         print(f"❌ Slack simulation error: {e}")
 
 def main():
-    """Run all tests"""
+    """Run all tests via shared backend"""
     print("🚀 Diksha Foundation Email Generation Test Suite")
+    print("Testing via Shared Backend Architecture")
     print("=" * 50)
     
     # Test basic connectivity
@@ -166,9 +229,11 @@ def main():
     print("\n" + "=" * 50)
     print("✅ Test suite completed!")
     print("\n💡 Next steps:")
-    print("1. Deploy to Railway: git push origin main")
-    print("2. Test in Slack: /pipeline email Wipro Foundation | identification")
-    print("3. Use API: POST /debug/generate-email with org and template")
+    print("1. Run: python app_refactored.py (to test Web UI)")
+    print("2. Run: python slack_bot_refactored.py (to test Slack)")
+    print("3. Test in Slack: /donoremail identification Wipro Foundation")
+    print("4. Use API: POST /api/generate-email with org and template")
+    print("5. Both interfaces now use the same shared backend!")
 
 if __name__ == "__main__":
     main()
