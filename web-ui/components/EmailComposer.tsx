@@ -6,9 +6,9 @@ import {
   EyeIcon,
   PencilIcon
 } from '@heroicons/react/24/outline'
-import { EmailTemplate, EmailDraft, Donor, EmailError } from '@/types'
-import { apiClient } from '@/lib/api'
-import { useActivityLogger } from '@/lib/activity-logger'
+import { EmailTemplate, EmailDraft, Donor, EmailError } from '../types'
+import { apiClient } from '../lib/api'
+import { useActivityLogger } from '../lib/activity-logger'
 import LoadingSpinner from './LoadingSpinner'
 
 interface EmailComposerProps {

@@ -1,15 +1,15 @@
 import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
-import Layout from '@/components/Layout'
-import LoadingSpinner from '@/components/LoadingSpinner'
+import Layout from '../components/Layout'
+import LoadingSpinner from '../components/LoadingSpinner'
 import { 
   MagnifyingGlassIcon, 
   UserGroupIcon,
   BuildingOfficeIcon,
   MapPinIcon
 } from '@heroicons/react/24/outline'
-import { Donor } from '@/types'
-import { apiClient } from '@/lib/api'
+import { Donor } from '../types'
+import { apiClient } from '../lib/api'
 
 export default function DonorsPage() {
   const { data: session } = useSession()

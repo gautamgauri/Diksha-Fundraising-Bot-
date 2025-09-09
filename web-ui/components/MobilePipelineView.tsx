@@ -8,8 +8,8 @@ import {
   CalendarIcon,
   TagIcon
 } from '@heroicons/react/24/outline'
-import { Donor, PipelineFilters } from '@/types'
-import { useActivityLogger } from '@/lib/activity-logger'
+import { Donor, PipelineFilters } from '../types'
+import { useActivityLogger } from '../lib/activity-logger'
 
 interface MobilePipelineViewProps {
   donors: Donor[]

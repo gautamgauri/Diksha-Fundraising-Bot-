@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { useSession } from 'next-auth/react'
-import Layout from '@/components/Layout'
-import PipelineTable from '@/components/PipelineTable'
-import MobilePipelineView from '@/components/MobilePipelineView'
-import { Donor } from '@/types'
-import { apiClient } from '@/lib/api'
-import LoadingSpinner from '@/components/LoadingSpinner'
-import { useActivityLogger } from '@/lib/activity-logger'
+import Layout from '../components/Layout'
+import PipelineTable from '../components/PipelineTable'
+import MobilePipelineView from '../components/MobilePipelineView'
+import { Donor } from '../types'
+import { apiClient } from '../lib/api'
+import LoadingSpinner from '../components/LoadingSpinner'
+import { useActivityLogger } from '../lib/activity-logger'
 
 export default function PipelinePage() {
   const { data: session } = useSession()

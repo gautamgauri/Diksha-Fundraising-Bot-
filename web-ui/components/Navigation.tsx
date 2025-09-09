@@ -14,7 +14,7 @@ import {
   BellIcon,
   ChartBarIcon
 } from '@heroicons/react/24/outline'
-import { User } from '@/types'
+import { User } from '../types'
 import NotificationSystem from './NotificationSystem'
 
 interface NavigationProps {

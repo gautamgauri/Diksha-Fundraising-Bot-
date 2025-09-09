@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { useSession } from 'next-auth/react'
-import Layout from '@/components/Layout'
-import EmailComposer from '@/components/EmailComposer'
-import LoadingSpinner from '@/components/LoadingSpinner'
+import Layout from '../../components/Layout'
+import EmailComposer from '../../components/EmailComposer'
+import LoadingSpinner from '../../components/LoadingSpinner'
 import { 
   ArrowLeftIcon, 
   PencilIcon, 
@@ -12,8 +12,8 @@ import {
   UserIcon,
   BuildingOfficeIcon
 } from '@heroicons/react/24/outline'
-import { Donor } from '@/types'
-import { apiClient } from '@/lib/api'
+import { Donor } from '../../types'
+import { apiClient } from '../../lib/api'
 
 export default function DonorProfilePage() {
   const { data: session } = useSession()

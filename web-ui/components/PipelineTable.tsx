@@ -12,12 +12,12 @@ import {
   DocumentArrowDownIcon,
   ArrowsPointingOutIcon
 } from '@heroicons/react/24/outline'
-import { Donor, PipelineFilters } from '@/types'
-import { apiClient } from '@/lib/api'
+import { Donor, PipelineFilters } from '../types'
+import { apiClient } from '../lib/api'
 import LoadingSpinner from './LoadingSpinner'
 import { useSession } from 'next-auth/react'
-import { validateDonorUpdate, ValidationResult } from '@/lib/validation'
-import { getUserFriendlyMessage, ApiError } from '@/lib/error-handling'
+import { validateDonorUpdate, ValidationResult } from '../lib/validation'
+import { getUserFriendlyMessage, ApiError } from '../lib/error-handling'
 
 interface PipelineTableProps {
   donors: Donor[]

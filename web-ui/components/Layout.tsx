@@ -4,7 +4,7 @@ import { useRouter } from 'next/router'
 import Navigation from './Navigation'
 import LoadingSpinner from './LoadingSpinner'
 import Breadcrumbs from './Breadcrumbs'
-import { User } from '@/types'
+import { User } from '../types'
 
 // Error Boundary Component
 interface ErrorBoundaryState {
