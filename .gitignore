@@ -131,6 +131,8 @@ test_*.py
 *.json
 !package.json
 !package-lock.json
+!railway.json
+!web-ui/railway.json
 !tsconfig.json
 !next.config.js
 !tailwind.config.js
