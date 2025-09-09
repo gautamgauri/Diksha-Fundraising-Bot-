@@ -8,7 +8,7 @@ from .core import (
     DeepSeekClient,
     SheetsDB,
     create_google_clients,
-    CacheManager
+    GlobalCacheManager
 )
 
 from .services import (
@@ -27,7 +27,7 @@ __all__ = [
     "DeepSeekClient", 
     "SheetsDB",
     "create_google_clients",
-    "CacheManager",
+    "GlobalCacheManager",
     "DonorService",
     "EmailService",
     "PipelineService",
