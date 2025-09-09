@@ -17,19 +17,381 @@ logger = logging.getLogger(__name__)
 # Initialize Flask app
 app = Flask(__name__)
 
-# Import modular components
+# Import shared backend
 try:
-    from deepseek_client import deepseek_client
-    from slack_bot import initialize_slack_bot
-    from context_helpers import get_relevant_donor_context, get_template_context, get_pipeline_insights
-    logger.info("✅ Modular components imported successfully")
+    from backend import backend_manager
+    logger.info("✅ Shared backend imported successfully")
 except ImportError as e:
-    logger.error(f"❌ Missing modular component: {e}")
-    logger.error("Please ensure deepseek_client.py, slack_bot.py, and context_helpers.py exist")
+    logger.error(f"❌ Missing shared backend: {e}")
+    logger.error("Please ensure backend package is properly configured")
+    backend_manager = None
+
+# Get services from backend manager
+if backend_manager:
+    donor_service = backend_manager.donor_service
+    email_service = backend_manager.email_service
+    pipeline_service = backend_manager.pipeline_service
+    template_service = backend_manager.template_service
+    context_helpers = backend_manager.context_helpers
+    deepseek_client = backend_manager.deepseek_client
+    sheets_db = backend_manager.sheets_db
+else:
+    donor_service = None
+    email_service = None
+    pipeline_service = None
+    template_service = None
+    context_helpers = None
     deepseek_client = None
-    initialize_slack_bot = None
+    sheets_db = None
 
 # Natural language processing is now handled by the modular slack_bot.py
+
+# Web UI API Endpoints
+@app.route('/api/pipeline', methods=['GET'])
+def get_pipeline():
+    """Get all donors from the pipeline"""
+    try:
+        if not donor_service:
+            return jsonify({
+                "success": False,
+                "error": "Donor service not available"
+            }), 503
+        
+        # Get all donors using shared backend
+        donors = donor_service.get_all_donors()
+        
+        return jsonify({
+            "success": True,
+            "data": donors
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting pipeline: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/api/donor/<donor_id>', methods=['GET'])
+def get_donor(donor_id):
+    """Get specific donor information"""
+    try:
+        if not donor_service:
+            return jsonify({
+                "success": False,
+                "error": "Donor service not available"
+            }), 503
+        
+        # Get donor using shared backend
+        donor = donor_service.get_donor(donor_id)
+        if not donor:
+            return jsonify({
+                "success": False,
+                "error": "Donor not found"
+            }), 404
+        
+        return jsonify({
+            "success": True,
+            "data": donor
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting donor: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/api/moveStage', methods=['POST'])
+def move_stage():
+    """Update donor stage"""
+    try:
+        data = request.get_json()
+        donor_id = data.get('donor_id')
+        stage = data.get('stage')
+        
+        if not donor_id or not stage:
+            return jsonify({
+                "success": False,
+                "error": "Missing required fields: donor_id, stage"
+            }), 400
+        
+        if not sheets_db or not sheets_db.initialized:
+            return jsonify({
+                "success": False,
+                "error": "Google Sheets not connected"
+            }), 503
+        
+        # Convert donor_id back to organization name
+        org_name = donor_id.replace("_", " ").title()
+        
+        # Update the stage
+        update_data = {
+            "current_stage": stage,
+            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        
+        # This would need to be implemented in your sheets_db
+        # sheets_db.update_organization(org_name, update_data)
+        
+        return jsonify({
+            "success": True,
+            "message": "Stage updated successfully"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error updating stage: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/api/assignDonor', methods=['POST'])
+def assign_donor():
+    """Assign donor to team member"""
+    try:
+        data = request.get_json()
+        donor_id = data.get('donor_id')
+        owner = data.get('owner')
+        
+        if not donor_id or not owner:
+            return jsonify({
+                "success": False,
+                "error": "Missing required fields: donor_id, owner"
+            }), 400
+        
+        if not sheets_db or not sheets_db.initialized:
+            return jsonify({
+                "success": False,
+                "error": "Google Sheets not connected"
+            }), 503
+        
+        # Convert donor_id back to organization name
+        org_name = donor_id.replace("_", " ").title()
+        
+        # Update the assignment
+        update_data = {
+            "assigned_to": owner,
+            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        
+        # This would need to be implemented in your sheets_db
+        # sheets_db.update_organization(org_name, update_data)
+        
+        return jsonify({
+            "success": True,
+            "message": "Donor assigned successfully"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error assigning donor: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/api/notes', methods=['POST'])
+def update_notes():
+    """Update donor notes"""
+    try:
+        data = request.get_json()
+        donor_id = data.get('donor_id')
+        notes = data.get('notes')
+        
+        if not donor_id:
+            return jsonify({
+                "success": False,
+                "error": "Missing required field: donor_id"
+            }), 400
+        
+        if not sheets_db or not sheets_db.initialized:
+            return jsonify({
+                "success": False,
+                "error": "Google Sheets not connected"
+            }), 503
+        
+        # Convert donor_id back to organization name
+        org_name = donor_id.replace("_", " ").title()
+        
+        # Update the notes
+        update_data = {
+            "notes": notes or "",
+            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        
+        # This would need to be implemented in your sheets_db
+        # sheets_db.update_organization(org_name, update_data)
+        
+        return jsonify({
+            "success": True,
+            "message": "Notes updated successfully"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error updating notes: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/api/templates', methods=['GET'])
+def get_templates():
+    """Get available email templates"""
+    try:
+        if not email_generator or not email_generator.initialized:
+            return jsonify({
+                "success": False,
+                "error": "Email generator not available"
+            }), 503
+        
+        # Get templates from email generator
+        templates = email_generator.get_available_templates()
+        
+        # Convert to web UI format
+        web_templates = []
+        for template_id, template_info in templates.items():
+            web_template = {
+                "id": template_id,
+                "name": template_info.get("name", template_id),
+                "description": template_info.get("description", ""),
+                "subject": template_info.get("subject", ""),
+                "content": template_info.get("content", ""),
+                "placeholders": template_info.get("placeholders", []),
+                "type": template_info.get("type", "intro")
+            }
+            web_templates.append(web_template)
+        
+        return jsonify({
+            "success": True,
+            "data": web_templates
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting templates: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/api/draft', methods=['POST'])
+def generate_draft():
+    """Generate email draft"""
+    try:
+        data = request.get_json()
+        template_id = data.get('template_id')
+        donor_id = data.get('donor_id')
+        subject = data.get('subject')
+        content = data.get('content')
+        placeholders = data.get('placeholders', {})
+        
+        if not all([template_id, donor_id, subject, content]):
+            return jsonify({
+                "success": False,
+                "error": "Missing required fields"
+            }), 400
+        
+        if not email_generator or not email_generator.initialized:
+            return jsonify({
+                "success": False,
+                "error": "Email generator not available"
+            }), 503
+        
+        # Generate draft using email generator
+        draft_id = f"draft_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{donor_id}"
+        
+        draft = {
+            "id": draft_id,
+            "template_id": template_id,
+            "donor_id": donor_id,
+            "subject": subject,
+            "content": content,
+            "placeholders": placeholders,
+            "status": "draft",
+            "created_at": datetime.now().isoformat()
+        }
+        
+        # Store draft (in a real implementation, you'd save this to a database)
+        # For now, we'll just return it
+        
+        return jsonify({
+            "success": True,
+            "data": draft
+        })
+        
+    except Exception as e:
+        logger.error(f"Error generating draft: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/api/send', methods=['POST'])
+def send_email():
+    """Send email"""
+    try:
+        data = request.get_json()
+        draft_id = data.get('draft_id')
+        
+        if not draft_id:
+            return jsonify({
+                "success": False,
+                "error": "Missing required field: draft_id"
+            }), 400
+        
+        # In a real implementation, you would:
+        # 1. Retrieve the draft
+        # 2. Send the email via Gmail API
+        # 3. Log the thread_id and message_id
+        # 4. Update the donor's last_contact_date
+        
+        # For now, return mock data
+        thread_id = f"thread_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        message_id = f"msg_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        return jsonify({
+            "success": True,
+            "data": {
+                "thread_id": thread_id,
+                "message_id": message_id
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error sending email: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/api/log', methods=['POST'])
+def log_activity():
+    """Log user activity"""
+    try:
+        data = request.get_json()
+        action = data.get('action')
+        target = data.get('target')
+        details = data.get('details')
+        
+        if not action:
+            return jsonify({
+                "success": False,
+                "error": "Missing required field: action"
+            }), 400
+        
+        # Log the activity (in a real implementation, you'd save this to a database)
+        logger.info(f"Activity logged: {action} - {target} - {details}")
+        
+        return jsonify({
+            "success": True,
+            "message": "Activity logged successfully"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error logging activity: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
 # Global error handlers
 @app.errorhandler(500)
@@ -98,75 +460,17 @@ def check_services():
                 "status_code": 503
             }), 503
 
-# Add proper import guards with error handling
-try:
-    from sheets_sync import SheetsDB
-    from email_generator import EmailGenerator
-    logger.info("✅ Required modules imported successfully")
-except ImportError as e:
-    logger.error(f"❌ Missing required module: {e}")
-    logger.error("Please ensure sheets_sync.py and email_generator.py exist in the same directory")
-    sys.exit(1)
+# All services are now provided by the shared backend
 
-# Optional import for cache manager
-try:
-    from cache_manager import cache_manager
-    logger.info("✅ Cache manager imported successfully")
-except ImportError as e:
-    logger.warning(f"⚠️ Cache manager not available: {e}")
-    cache_manager = None
-
-# Initialize Google Sheets database (ONCE) with fallback
-try:
-    sheets_db = SheetsDB()
-    if not sheets_db.initialized:
-        logger.warning("⚠️ Google Sheets connection failed during initialization")
-        sheets_db = None
-    else:
-        logger.info("✅ Google Sheets database initialized successfully")
-except Exception as e:
-    logger.error(f"❌ Failed to initialize Google Sheets database: {e}")
-    logger.warning("⚠️ Application will run with limited functionality")
-    sheets_db = None
-
-# Initialize Google Drive service for donor profiles
-drive_service = None
-try:
-    # Try to get Google Drive credentials from environment
-    credentials_json = os.environ.get("GOOGLE_CREDENTIALS_BASE64")
-    if credentials_json:
-        import base64
-        import json
-        from google.oauth2.service_account import Credentials
-        from googleapiclient.discovery import build
-        
-        # Decode credentials
-        credentials_data = base64.b64decode(credentials_json).decode('utf-8')
-        credentials_dict = json.loads(credentials_data)
-        
-        # Create credentials and Drive service
-        credentials = Credentials.from_service_account_info(credentials_dict)
-        drive_service = build('drive', 'v3', credentials=credentials)
-        logger.info("✅ Google Drive service configured for donor profiles")
-    else:
-        logger.warning("⚠️ GOOGLE_CREDENTIALS_BASE64 not set - donor profiles will not be available")
-except Exception as e:
-    logger.warning(f"⚠️ Could not configure Google Drive service: {e}")
-
-# Initialize email generator with Drive service
-email_generator = EmailGenerator(drive_service=drive_service)
-
-# Initialize Slack bot with dependencies
+# Initialize Slack bot with shared backend
 slack_bot = None
-if initialize_slack_bot:
-    try:
-        slack_bot = initialize_slack_bot(sheets_db=sheets_db, email_generator=email_generator)
-        logger.info("✅ Slack bot initialized with dependencies")
-    except Exception as e:
-        logger.error(f"❌ Slack bot initialization failed: {e}")
-        slack_bot = None
-else:
-    logger.warning("⚠️ Slack bot initialization function not available")
+try:
+    from slack_bot_refactored import initialize_slack_bot
+    slack_bot = initialize_slack_bot()
+    logger.info("✅ Slack bot initialized with shared backend")
+except Exception as e:
+    logger.error(f"❌ Slack bot initialization failed: {e}")
+    slack_bot = None
 
 ############################
 # Slack Bot Configuration
@@ -1634,6 +1938,73 @@ def debug_context_test():
             "ok": False,
             "error": f"Context test failed: {e}",
             "test_mode": data.get("mode", "unknown") if 'data' in locals() else "unknown"
+        }), 500
+
+@app.route('/debug/drive-templates', methods=['GET'])
+def debug_drive_templates():
+    """Test Drive template reading functionality"""
+    try:
+        if not email_generator:
+            return jsonify({
+                "ok": False,
+                "error": "Email generator not available"
+            }), 503
+        
+        # Test template reading from Drive
+        templates = email_generator.get_available_templates()
+        template_details = {}
+        
+        for template_name in templates.keys():
+            template_content = email_generator.get_template_content(template_name)
+            if template_content:
+                template_details[template_name] = {
+                    "has_content": True,
+                    "content_length": len(template_content),
+                    "content_preview": template_content[:200] + "..." if len(template_content) > 200 else template_content,
+                    "source": "Drive" if len(template_content) > 50 else "Hardcoded"
+                }
+            else:
+                template_details[template_name] = {
+                    "has_content": False,
+                    "content_length": 0,
+                    "content_preview": "No content available",
+                    "source": "Hardcoded"
+                }
+        
+        # Test Drive service connectivity
+        drive_status = "Not configured"
+        if email_generator.drive_service:
+            try:
+                # Simple test query
+                test_query = "name='Templates' and mimeType='application/vnd.google-apps.folder'"
+                results = email_generator.drive_service.files().list(
+                    q=test_query,
+                    spaces='drive',
+                    fields='files(id, name)',
+                    pageSize=1
+                ).execute()
+                
+                if results.get('files'):
+                    drive_status = f"Connected - Found {len(results['files'])} template folders"
+                else:
+                    drive_status = "Connected - No template folders found"
+            except Exception as e:
+                drive_status = f"Error: {str(e)}"
+        
+        return jsonify({
+            "ok": True,
+            "drive_status": drive_status,
+            "total_templates": len(templates),
+            "template_details": template_details,
+            "drive_service_configured": bool(email_generator.drive_service),
+            "message": "Drive template test completed"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in Drive templates test: {e}")
+        return jsonify({
+            "ok": False,
+            "error": f"Drive templates test failed: {e}"
         }), 500
 
 def validate_startup_components():

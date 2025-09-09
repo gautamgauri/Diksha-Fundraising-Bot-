@@ -15,6 +15,7 @@ class DeploymentMode(Enum):
 EMAIL_CONFIG = {
     'max_tokens': 1200,
     'temperature': 0.7,
+    'model': 'claude-sonnet-4-20250514',
     'similarity_threshold': 0.8,
     'content_length_limit': 2000,
     'profile_summary_limit': 500,
@@ -44,9 +45,11 @@ CACHE_CONFIG = {
 
 # API Configuration
 API_CONFIG = {
-    'claude_model': 'claude-sonnet-4-20250514',
-    'max_request_size': 1000000,  # 1MB
-    'timeout': 30
+    'claude_model': os.environ.get('CLAUDE_MODEL', 'claude-sonnet-4-20250514'),
+    'claude_api_key': os.environ.get('CLAUDE_API_KEY'),
+    'deepseek_api_key': os.environ.get('DEEPSEEK_API_KEY'),
+    'max_request_size': int(os.environ.get('MAX_REQUEST_SIZE', 1000000)),  # 1MB
+    'timeout': int(os.environ.get('API_TIMEOUT', 30))
 }
 
 # Logging Configuration
@@ -78,7 +81,6 @@ def get_deployment_mode():
         'development': 'dev',
         'dev': 'dev',
         'staging': 'staging',
-        'staging': 'staging',
         'production': 'prod',
         'prod': 'prod'
     }
@@ -101,6 +103,9 @@ else:  # DEVELOPMENT
     EMAIL_CONFIG['max_retries'] = 1
     CACHE_CONFIG['profile_timeout'] = 300   # 5 minutes
     LOGGING_CONFIG['level'] = 'DEBUG'
+
+
+
 
 
 

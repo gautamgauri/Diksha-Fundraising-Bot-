@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Slack Bot Integration for Diksha Foundation Fundraising Bot
-Handles Slack events, commands, and natural language processing with DeepSeek
+Refactored Slack Bot Integration for Diksha Foundation Fundraising Bot
+Uses shared backend services for consistent functionality
 """
 
 import os
@@ -15,6 +15,9 @@ from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
+# Import shared backend
+from backend import backend_manager
+
 # Import dependencies
 try:
     from slack_bolt import App as SlackApp
@@ -25,39 +28,24 @@ except ImportError:
     logger.warning("⚠️ slack-bolt not available - Slack integration disabled")
 
 class SlackBot:
-    """Slack bot with DeepSeek natural language processing"""
+    """Slack bot with shared backend services"""
     
     def __init__(self, bot_token: str = None, signing_secret: str = None):
         """Initialize Slack bot with shared backend"""
         self.bot_token = bot_token or os.environ.get("SLACK_BOT_TOKEN")
         self.signing_secret = signing_secret or os.environ.get("SLACK_SIGNING_SECRET")
-        
-        # Import shared backend
-        try:
-            from backend import backend_manager
-            self.backend = backend_manager
-            self.donor_service = self.backend.donor_service
-            self.email_service = self.backend.email_service
-            self.pipeline_service = self.backend.pipeline_service
-            self.template_service = self.backend.template_service
-            self.context_helpers = self.backend.context_helpers
-            self.deepseek_client = self.backend.deepseek_client
-            self.sheets_db = self.backend.sheets_db
-            self.email_generator = self.backend.email_generator
-        except ImportError as e:
-            logger.error(f"❌ Failed to import shared backend: {e}")
-            self.backend = None
-            self.donor_service = None
-            self.email_service = None
-            self.pipeline_service = None
-            self.template_service = None
-            self.context_helpers = None
-            self.deepseek_client = None
-            self.sheets_db = None
-            self.email_generator = None
         self.app = None
         self.handler = None
         self.initialized = False
+        
+        # Get services from backend manager
+        self.backend = backend_manager
+        self.donor_service = self.backend.donor_service
+        self.email_service = self.backend.email_service
+        self.pipeline_service = self.backend.pipeline_service
+        self.template_service = self.backend.template_service
+        self.context_helpers = self.backend.context_helpers
+        self.deepseek_client = self.backend.deepseek_client
         
         # Enhanced tracking and configuration
         self.pending_approvals = {}  # channel_id -> {thread_ts: approval_data}
@@ -80,7 +68,7 @@ class SlackBot:
                 self.handler = SlackRequestHandler(self.app)
                 self.initialized = True
                 self._setup_event_handlers()
-                logger.info("✅ Slack bot initialized successfully")
+                logger.info("✅ Slack bot initialized with shared backend")
             except Exception as e:
                 logger.error(f"❌ Slack initialization failed: {e}")
                 self.app = None
@@ -155,192 +143,29 @@ class SlackBot:
             # Update context for ongoing conversations
             self._update_context(thread_ts, "user", text)
     
-    def _check_rate_limit(self, user_id: str) -> bool:
-        """Enhanced rate limiting with sliding window"""
-        now = time.time()
-        
-        if user_id not in self.rate_limits:
-            self.rate_limits[user_id] = {"requests": [], "window_start": now}
-        
-        user_limits = self.rate_limits[user_id]
-        
-        # Clean old requests (sliding window)
-        user_limits["requests"] = [req_time for req_time in user_limits["requests"] 
-                                 if now - req_time < 60]  # 1-minute window
-        
-        # Check limit
-        if len(user_limits["requests"]) >= self.max_requests_per_minute:
-            return False
-        
-        # Add current request
-        user_limits["requests"].append(now)
-        return True
-    
-    def _update_context(self, thread_ts: str, role: str, content: str):
-        """Update conversation context for better continuity"""
-        if thread_ts not in self.session_contexts:
-            self.session_contexts[thread_ts] = []
-        
-        context = self.session_contexts[thread_ts]
-        context.append({"role": role, "content": content, "timestamp": datetime.now().isoformat()})
-        
-        # Keep only recent context
-        if len(context) > self.max_context_length * 2:  # *2 for user+assistant pairs
-            context = context[-self.max_context_length * 2:]
-            self.session_contexts[thread_ts] = context
-    
-    def _get_context_for_processing(self, thread_ts: str) -> str:
-        """Get conversation context for enhanced processing"""
-        if thread_ts not in self.session_contexts:
-            return ""
-        
-        context_parts = []
-        for exchange in self.session_contexts[thread_ts][-4:]:  # Last 2 exchanges
-            role = exchange["role"]
-            content = exchange["content"][:100]  # Truncate for brevity
-            context_parts.append(f"{role}: {content}")
-        
-        return "; ".join(context_parts) if context_parts else ""
-    
-    def _has_pending_approval(self, channel_id: str, thread_ts: str) -> bool:
-        """Check if there's a pending approval in this thread"""
-        return (channel_id in self.pending_approvals and 
-                thread_ts in self.pending_approvals[channel_id])
-    
-    def _handle_approval_response(self, channel_id: str, thread_ts: str, user_id: str, text: str) -> Optional[str]:
-        """Handle user approval responses"""
-        try:
-            if text in ["approve", "yes", "send", "ok"]:
-                response = self._process_approval(channel_id, thread_ts, user_id)
-                # Clean up pending approval
-                if channel_id in self.pending_approvals and thread_ts in self.pending_approvals[channel_id]:
-                    del self.pending_approvals[channel_id][thread_ts]
-                return response
-            
-            elif text.startswith("edit ") or text.startswith("change "):
-                changes = text.replace("edit ", "").replace("change ", "")
-                return self._handle_edit_request(channel_id, thread_ts, user_id, changes)
-            
-            elif text in ["cancel", "no", "stop"]:
-                # Clean up pending approval
-                if channel_id in self.pending_approvals and thread_ts in self.pending_approvals[channel_id]:
-                    del self.pending_approvals[channel_id][thread_ts]
-                return "Email generation cancelled. No changes were made to the pipeline."
-            
-            elif text.startswith("help") or text.startswith("?"):
-                return """**Approval Options:**
-• `approve` - Send email and update pipeline
-• `edit [changes]` - Modify the email (e.g., \"edit make it warmer\")
-• `cancel` - Don't send anything
-
-**Examples:**
-• `edit make it more formal`
-• `edit add mention of rural development`
-• `edit shorter and more direct`"""
-            
-            return None
-            
-        except Exception as e:
-            logger.error(f"Error handling approval response: {e}")
-            return "I encountered an error while processing your approval. Please try again."
-    
-    def _process_approval(self, channel_id: str, thread_ts: str, user_id: str) -> str:
-        """Process approved email and update pipeline"""
-        try:
-            approval_data = self.pending_approvals[channel_id][thread_ts]
-            org_name = approval_data["org_data"]["organization_name"]
-            email_type = approval_data["nlu_result"]["email_variant"]
-            
-            # Determine new stage based on email type
-            stage_mapping = {
-                "intro": "Intro Sent",
-                "followup": "Follow-up Sent", 
-                "proposal_cover": "Proposal Sent",
-                "thankyou": "Thank You Sent"
-            }
-            new_stage = stage_mapping.get(email_type, "Communication Sent")
-            
-            # Update pipeline with conflict detection
-            update_result = self._update_pipeline_with_conflict_detection(
-                org_name, new_stage, email_type
-            )
-            
-            if update_result["success"]:
-                return f"""✅ **Email approved and pipeline updated!**
-
-**Organization:** {org_name}
-**New Stage:** {new_stage}
-**Email Type:** {email_type}
-
-**Next Actions:**
-• Email draft is ready for your review
-• Pipeline has been updated
-• Next follow-up scheduled for {update_result.get('next_action_date', 'TBD')}
-
-**Thread Link:** {update_result.get('thread_link', 'N/A')}"""
-            else:
-                return f"""⚠️ **Pipeline update failed**
-
-**Organization:** {org_name}
-**Error:** {update_result.get('error', 'Unknown error')}
-
-The email was approved but I couldn't update the pipeline. Please update it manually or contact support."""
-            
-        except Exception as e:
-            logger.error(f"Error processing approval: {e}")
-            return "I encountered an error while updating the pipeline. The email was approved but the pipeline update failed. Please contact support."
-    
-    def _handle_edit_request(self, channel_id: str, thread_ts: str, user_id: str, changes: str) -> str:
-        """Handle edit requests for email content"""
-        try:
-            if not changes:
-                return "Please specify what changes you'd like me to make. For example:\n• \"edit make it warmer\"\n• \"edit shorter and more direct\"\n• \"edit add mention of rural development\""
-            
-            # For now, return a simple response
-            # In a full implementation, you'd regenerate the email with the changes
-            return f"""I understand you want to make these changes: "{changes}"
-
-**Note:** Email regeneration with changes is not yet implemented in this version.
-
-**Current options:**
-• `approve` - Use the current email as-is
-• `cancel` - Don't send anything
-• Contact support for custom modifications"""
-            
-        except Exception as e:
-            logger.error(f"Error handling edit request: {e}")
-            return "I encountered an error while processing your edit request. Please try again."
-    
     def _process_natural_language_query(self, text: str, user_id: str, 
                                       channel_id: str = None, thread_ts: str = None) -> str:
-        """Process natural language queries with context"""
+        """Process natural language queries with context using shared backend"""
         try:
             # Get conversation context if available
             context = self._get_context_for_processing(thread_ts) if thread_ts else ""
             
-            # Import context helpers (avoid circular imports)
-            from context_helpers import get_relevant_donor_context, get_template_context, get_pipeline_insights
-            
             # Check if it's a command-like request and gather relevant context
-            donor_context = {}
-            template_context = {}
-            
             if any(keyword in text.lower() for keyword in ["email", "generate", "donor", "pipeline", "status", "search", "organization", "foundation", "trust"]):
-                # Get relevant donor data based on the query
-                donor_context = get_relevant_donor_context(text, self._get_sheets_db())
-                template_context = get_template_context(self._get_email_generator())
+                # Get relevant context using shared backend
+                donor_context = self.context_helpers.get_relevant_donor_context(text)
+                template_context = self.context_helpers.get_template_context()
                 
                 # Try to provide helpful guidance with real data
                 response = self._handle_natural_language_query_with_context(text, user_id, channel_id, donor_context, template_context)
                 return response
             
             # Try DeepSeek for broader conversations
-            from deepseek_client import deepseek_client
-            if deepseek_client and deepseek_client.initialized:
+            if self.deepseek_client and self.deepseek_client.initialized:
                 # Get general context for broader conversations
-                donor_context = get_relevant_donor_context(text, self._get_sheets_db())
-                template_context = get_template_context(self._get_email_generator())
-                pipeline_context = get_pipeline_insights(self._get_sheets_db())
+                donor_context = self.context_helpers.get_relevant_donor_context(text)
+                template_context = self.context_helpers.get_template_context()
+                pipeline_context = self.context_helpers.get_pipeline_insights()
                 
                 combined_context = {
                     **donor_context,
@@ -349,7 +174,7 @@ The email was approved but I couldn't update the pipeline. Please update it manu
                 }
                 
                 # Use DeepSeek with full context
-                response = deepseek_client.chat_completion(text, context=combined_context, 
+                response = self.deepseek_client.chat_completion(text, context=combined_context, 
                                                          donor_data=donor_context, 
                                                          templates_info=template_context)
                 if response:
@@ -406,8 +231,7 @@ The email was approved but I couldn't update the pipeline. Please update it manu
         
         # Pipeline queries with real data
         elif "pipeline" in text_lower or "donor" in text_lower:
-            from context_helpers import get_pipeline_insights
-            pipeline_insights = get_pipeline_insights(self._get_sheets_db())
+            pipeline_insights = self.context_helpers.get_pipeline_insights()
             
             if pipeline_insights:
                 total_orgs = pipeline_insights.get('total_organizations', 0)
@@ -523,9 +347,8 @@ I can also have natural conversations about fundraising strategy and donor manag
         
         else:
             # Use DeepSeek for complex queries if available
-            from deepseek_client import deepseek_client
-            if deepseek_client and deepseek_client.initialized:
-                response = deepseek_client.chat_completion(text)
+            if self.deepseek_client and self.deepseek_client.initialized:
+                response = self.deepseek_client.chat_completion(text)
                 if response:
                     return response
             
@@ -537,52 +360,53 @@ I can also have natural conversations about fundraising strategy and donor manag
 
 Or use `/donoremail help` and `/pipeline` for specific commands."""
     
-    def _update_pipeline_with_conflict_detection(self, org_name: str, new_stage: str, 
-                                               email_type: str) -> Dict[str, Any]:
-        """Update pipeline with conflict detection"""
+    def generate_and_send_email(self, template_type: str, org_name: str, user_id: str, channel_id: str, email_purpose: str):
+        """Generate and send email using the shared backend email service"""
         try:
-            if not self.sheets_db or not self.sheets_db.initialized:
-                return {"success": False, "error": "Sheets database not available"}
+            # Convert org_name to donor_id format
+            donor_id = org_name.replace(" ", "_").lower()
             
-            # Get current organization data
-            current_data = self.sheets_db.find_org(org_name)
-            if not current_data:
-                return {"success": False, "error": "Organization not found"}
+            # Use shared backend email service
+            result = self.email_service.generate_email(template_type, donor_id, mode="claude")
             
-            current_org = current_data[0]
-            
-            # Check for conflicts (basic implementation)
-            # In a real implementation, you'd check content hash or timestamp
-            conflict_detected = False
-            
-            if not conflict_detected:
-                # Update pipeline
-                update_data = {
-                    "previous_stage": current_org.get("current_stage", ""),
-                    "current_stage": new_stage,
-                    "last_activity_date": datetime.now().strftime("%Y-%m-%d"),
-                    "next_action": f"Follow up on {email_type}",
-                    "next_action_date": (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d"),
-                    "interaction_notes": f"[{datetime.now().strftime('%Y-%m-%d')}] {email_type} sent via Slack bot"
-                }
-                
-                # This would need to be implemented in your sheets_db
-                # update_result = self.sheets_db.update_organization(org_name, update_data)
-                
+            if not result.get("success"):
                 return {
-                    "success": True,
-                    "next_action_date": update_data["next_action_date"],
-                    "thread_link": "Slack thread link"
+                    "response_type": "ephemeral",
+                    "text": f"❌ {result.get('error', 'Email generation failed')}"
                 }
-            else:
-                return {
-                    "success": False,
-                    "error": "Conflict detected - organization data has changed"
-                }
+            
+            draft = result["data"]
+            
+            # Format the response
+            response_text = f"""📧 **{email_purpose} Generated Successfully!**
+
+🎯 **Organization:** {org_name}
+📋 **Template:** {template_type}
+🤖 **Enhanced with:** Claude AI + Google Drive Profile
+
+📝 **Subject:** {draft['subject']}
+
+📄 **Email Body:**
+{draft['content']}
+
+---
+💡 **Next Steps:**
+• Review and customize the email
+• Use `/donoremail refine [tone]` to adjust tone
+• Use `/donoremail save [name]` to save draft
+• Use `/donoremail share [@colleague]` to get feedback"""
+            
+            return {
+                "response_type": "in_channel",
+                "text": response_text
+            }
             
         except Exception as e:
-            logger.error(f"Error updating pipeline: {e}")
-            return {"success": False, "error": str(e)}
+            logger.error(f"Error generating email: {e}")
+            return {
+                "response_type": "ephemeral",
+                "text": f"❌ Error generating email: {str(e)}\n\nPlease try again or contact support."
+            }
     
     def _check_rate_limit(self, user_id: str) -> bool:
         """Enhanced rate limiting with sliding window"""
@@ -592,12 +416,16 @@ Or use `/donoremail help` and `/pipeline` for specific commands."""
             self.rate_limits[user_id] = {"requests": [], "window_start": now}
         
         user_limits = self.rate_limits[user_id]
-        user_limits["requests"] = [req_time for req_time in user_limits["requests"] 
-                                 if now - req_time < 60]
         
+        # Clean old requests (sliding window)
+        user_limits["requests"] = [req_time for req_time in user_limits["requests"] 
+                                 if now - req_time < 60]  # 1-minute window
+        
+        # Check limit
         if len(user_limits["requests"]) >= self.max_requests_per_minute:
             return False
         
+        # Add current request
         user_limits["requests"].append(now)
         return True
     
@@ -609,7 +437,8 @@ Or use `/donoremail help` and `/pipeline` for specific commands."""
         context = self.session_contexts[thread_ts]
         context.append({"role": role, "content": content, "timestamp": datetime.now().isoformat()})
         
-        if len(context) > self.max_context_length * 2:
+        # Keep only recent context
+        if len(context) > self.max_context_length * 2:  # *2 for user+assistant pairs
             context = context[-self.max_context_length * 2:]
             self.session_contexts[thread_ts] = context
     
@@ -626,22 +455,113 @@ Or use `/donoremail help` and `/pipeline` for specific commands."""
         
         return "; ".join(context_parts) if context_parts else ""
     
-    def _get_clarification_response(self, text: str) -> str:
-        """Get helpful clarification when intent is unclear"""
-        return f"""I'm not sure what you're asking for. Could you rephrase that?
+    def _has_pending_approval(self, channel_id: str, thread_ts: str) -> bool:
+        """Check if there's a pending approval in this thread"""
+        return (channel_id in self.pending_approvals and 
+                thread_ts in self.pending_approvals[channel_id])
+    
+    def _handle_approval_response(self, channel_id: str, thread_ts: str, user_id: str, text: str) -> Optional[str]:
+        """Handle user approval responses"""
+        try:
+            if text in ["approve", "yes", "send", "ok"]:
+                response = self._process_approval(channel_id, thread_ts, user_id)
+                # Clean up pending approval
+                if channel_id in self.pending_approvals and thread_ts in self.pending_approvals[channel_id]:
+                    del self.pending_approvals[channel_id][thread_ts]
+                return response
+            
+            elif text.startswith("edit ") or text.startswith("change "):
+                changes = text.replace("edit ", "").replace("change ", "")
+                return self._handle_edit_request(channel_id, thread_ts, user_id, changes)
+            
+            elif text in ["cancel", "no", "stop"]:
+                # Clean up pending approval
+                if channel_id in self.pending_approvals and thread_ts in self.pending_approvals[channel_id]:
+                    del self.pending_approvals[channel_id][thread_ts]
+                return "Email generation cancelled. No changes were made to the pipeline."
+            
+            elif text.startswith("help") or text.startswith("?"):
+                return """**Approval Options:**
+• `approve` - Send email and update pipeline
+• `edit [changes]` - Modify the email (e.g., \"edit make it warmer\")
+• `cancel` - Don't send anything
 
 **Examples:**
-• "intro email to HDFC about KHEL program"
-• "what's our status with Tata Trust?"
-• "show me Wipro Foundation assets"
-
-**Or ask for help:** "help" or "what can you do?" """
+• `edit make it more formal`
+• `edit add mention of rural development`
+• `edit shorter and more direct`"""
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error handling approval response: {e}")
+            return "I encountered an error while processing your approval. Please try again."
     
-    def _get_error_response(self, error: str) -> str:
-        """Get user-friendly error responses"""
-        return f"""I encountered an error: {error}
+    def _process_approval(self, channel_id: str, thread_ts: str, user_id: str) -> str:
+        """Process approved email and update pipeline"""
+        try:
+            approval_data = self.pending_approvals[channel_id][thread_ts]
+            org_name = approval_data["org_data"]["organization_name"]
+            email_type = approval_data["nlu_result"]["email_variant"]
+            
+            # Determine new stage based on email type
+            stage_mapping = {
+                "intro": "Intro Sent",
+                "followup": "Follow-up Sent", 
+                "proposal_cover": "Proposal Sent",
+                "thankyou": "Thank You Sent"
+            }
+            new_stage = stage_mapping.get(email_type, "Communication Sent")
+            
+            # Update pipeline using shared backend
+            donor_id = org_name.replace(" ", "_").lower()
+            success = self.donor_service.update_donor_stage(donor_id, new_stage)
+            
+            if success:
+                return f"""✅ **Email approved and pipeline updated!**
 
-Please try again or rephrase your request. If the problem persists, contact support."""
+**Organization:** {org_name}
+**New Stage:** {new_stage}
+**Email Type:** {email_type}
+
+**Next Actions:**
+• Email draft is ready for your review
+• Pipeline has been updated
+• Next follow-up scheduled for TBD
+
+**Thread Link:** N/A"""
+            else:
+                return f"""⚠️ **Pipeline update failed**
+
+**Organization:** {org_name}
+**Error:** Failed to update pipeline
+
+The email was approved but I couldn't update the pipeline. Please update it manually or contact support."""
+            
+        except Exception as e:
+            logger.error(f"Error processing approval: {e}")
+            return "I encountered an error while updating the pipeline. The email was approved but the pipeline update failed. Please contact support."
+    
+    def _handle_edit_request(self, channel_id: str, thread_ts: str, user_id: str, changes: str) -> str:
+        """Handle edit requests for email content"""
+        try:
+            if not changes:
+                return "Please specify what changes you'd like me to make. For example:\n• \"edit make it warmer\"\n• \"edit shorter and more direct\"\n• \"edit add mention of rural development\""
+            
+            # For now, return a simple response
+            # In a full implementation, you'd regenerate the email with the changes
+            return f"""I understand you want to make these changes: "{changes}"
+
+**Note:** Email regeneration with changes is not yet implemented in this version.
+
+**Current options:**
+• `approve` - Use the current email as-is
+• `cancel` - Don't send anything
+• Contact support for custom modifications"""
+            
+        except Exception as e:
+            logger.error(f"Error handling edit request: {e}")
+            return "I encountered an error while processing your edit request. Please try again."
     
     def _get_help_message(self) -> str:
         """Get comprehensive help message"""
@@ -676,16 +596,8 @@ Please try again or rephrase your request. If the problem persists, contact supp
     def is_initialized(self):
         """Check if Slack bot is initialized"""
         return self.initialized
-    
-    def _get_sheets_db(self):
-        """Get sheets database instance"""
-        return self.sheets_db
-    
-    def _get_email_generator(self):
-        """Get email generator instance"""
-        return self.email_generator
 
-# Global instance - will be initialized with dependencies from main app
+# Global instance - will be initialized with shared backend
 slack_bot = None
 
 def initialize_slack_bot():
