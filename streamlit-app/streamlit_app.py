@@ -1,18 +1,16 @@
 """
-Diksha Fundraising Bot - Main Application
-Streamlit multi-page application for fundraising management
+Diksha Fundraising Bot - Streamlit App
+Main application file for the fundraising management system
 """
 
 import streamlit as st
 import sys
 import os
 
-# Add current directory to path for lib imports
-current_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, current_dir)
+# Add the lib directory to the path
+sys.path.append(os.path.join(os.path.dirname(__file__), 'lib'))
 
-from lib.auth import check_auth, show_auth_status
-from lib.api import get_cached_donors, get_cached_pipeline_data
+from auth import check_auth
 
 # Page configuration
 st.set_page_config(
@@ -25,79 +23,103 @@ st.set_page_config(
 def main():
     """Main application function"""
     
-    # Check authentication first
+    # Check authentication
     if not check_auth():
-        return  # Authentication form will be shown
-    
-    # Show auth status in sidebar
-    show_auth_status()
+        st.error("🔒 Please authenticate to access the application")
+        st.info("Contact your administrator for access credentials.")
+        return
     
     # Main dashboard content
     st.title("🏠 Diksha Fundraising Dashboard")
-    st.markdown("Welcome to the Diksha Foundation Fundraising Management System")
+    st.markdown("Welcome to your fundraising management system")
     
-    # Dashboard overview
+    # Quick stats overview
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.metric("Total Prospects", "150", "12")
+        st.metric(
+            label="Total Donors",
+            value="247",
+            delta="12 this month"
+        )
+    
     with col2:
-        st.metric("Active Conversations", "45", "8")
+        st.metric(
+            label="Active Pipeline",
+            value="$450K",
+            delta="$75K this quarter"
+        )
+    
     with col3:
-        st.metric("Proposals Sent", "23", "5")
+        st.metric(
+            label="Emails Sent",
+            value="1,234",
+            delta="89 this week"
+        )
+    
     with col4:
-        st.metric("Closed Won", "12", "3")
+        st.metric(
+            label="Success Rate",
+            value="68%",
+            delta="5% improvement"
+        )
     
     st.markdown("---")
     
     # Quick actions
     st.subheader("🚀 Quick Actions")
     
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
     
     with col1:
         if st.button("📊 View Pipeline", use_container_width=True):
             st.switch_page("pages/1_📊_Pipeline.py")
     
     with col2:
-        if st.button("🏷️ Donor Profiles", use_container_width=True):
-            st.switch_page("pages/2_🏷️_Donor_Profile.py")
-    
-    with col3:
-        if st.button("✉️ Email Composer", use_container_width=True):
+        if st.button("✉️ Compose Email", use_container_width=True):
             st.switch_page("pages/3_✉️_Composer.py")
     
-    with col4:
-        if st.button("📝 Activity Log", use_container_width=True):
+    with col3:
+        if st.button("📝 Add Activity", use_container_width=True):
             st.switch_page("pages/5_📝_Activity_Log.py")
     
-    # Recent activity
-    st.markdown("---")
-    st.subheader("📈 Recent Activity")
+    # Recent activities preview
+    st.subheader("📋 Recent Activities")
     
-    # Sample recent activity data
     recent_activities = [
-        {"action": "Email sent", "target": "ABC Corp", "time": "2 hours ago", "user": "John Doe"},
-        {"action": "Prospect added", "target": "XYZ Foundation", "time": "4 hours ago", "user": "Jane Smith"},
-        {"action": "Meeting scheduled", "target": "Tech Startup Inc", "time": "1 day ago", "user": "John Doe"},
-        {"action": "Proposal sent", "target": "Local Business", "time": "2 days ago", "user": "Jane Smith"},
+        {"time": "2 hours ago", "activity": "Email sent to ABC Corporation"},
+        {"time": "5 hours ago", "activity": "Meeting scheduled with XYZ Foundation"},
+        {"time": "1 day ago", "activity": "$25,000 donation received from Tech Startup Inc"},
+        {"time": "2 days ago", "activity": "Follow-up call with Local Business LLC"}
     ]
     
     for activity in recent_activities:
-        with st.container():
-            col1, col2, col3 = st.columns([2, 1, 1])
-            with col1:
-                st.write(f"**{activity['action']}** - {activity['target']}")
-            with col2:
-                st.write(activity['time'])
-            with col3:
-                st.write(activity['user'])
-            st.divider()
+        st.markdown(f"**{activity['time']}** - {activity['activity']}")
     
-    # Footer
-    st.markdown("---")
-    st.markdown("**Diksha Fundraising Bot** - Version 2.0")
-    st.markdown("Built with ❤️ for Diksha Foundation")
+    # Navigation sidebar
+    with st.sidebar:
+        st.title("🏠 Navigation")
+        st.markdown("---")
+        
+        # Quick navigation buttons
+        if st.button("📊 Pipeline", use_container_width=True):
+            st.switch_page("pages/1_📊_Pipeline.py")
+        
+        if st.button("🏷️ Donor Profiles", use_container_width=True):
+            st.switch_page("pages/2_🏷️_Donor_Profile.py")
+        
+        if st.button("✉️ Email Composer", use_container_width=True):
+            st.switch_page("pages/3_✉️_Composer.py")
+        
+        if st.button("🧩 Templates", use_container_width=True):
+            st.switch_page("pages/4_🧩_Templates.py")
+        
+        if st.button("📝 Activity Log", use_container_width=True):
+            st.switch_page("pages/5_📝_Activity_Log.py")
+        
+        st.markdown("---")
+        st.markdown("**Diksha Fundraising Bot**")
+        st.markdown("Version 1.0")
 
 if __name__ == "__main__":
     main()
