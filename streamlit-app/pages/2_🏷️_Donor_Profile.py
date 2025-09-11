@@ -9,7 +9,9 @@ import os
 from datetime import datetime
 
 # Add current directory to path for lib imports
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.insert(0, parent_dir)
 
 from lib.api import get_donors, get_donor_profile
 

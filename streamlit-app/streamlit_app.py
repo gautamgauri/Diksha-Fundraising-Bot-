@@ -7,8 +7,9 @@ import streamlit as st
 import sys
 import os
 
-# Add the parent directory to the path to import backend modules
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add the current directory to the path to import lib modules
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, current_dir)
 
 from lib.api import get_donors, get_pipeline_data
 from lib.auth import check_auth
