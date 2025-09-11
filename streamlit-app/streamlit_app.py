@@ -1,18 +1,17 @@
 """
-Diksha Fundraising Bot - Streamlit App
-Main application file for the fundraising management system
+Diksha Fundraising Bot - Main Application
+Streamlit multi-page application for fundraising management
 """
 
 import streamlit as st
 import sys
 import os
 
-# Add the current directory to the path to import lib modules
+# Add current directory to path for lib imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, current_dir)
 
-from lib.api import get_donors, get_pipeline_data
-from lib.auth import check_auth
+from lib.auth import check_auth, show_auth_status
 
 # Page configuration
 st.set_page_config(
@@ -25,46 +24,79 @@ st.set_page_config(
 def main():
     """Main application function"""
     
-    # Check authentication
+    # Check authentication first
     if not check_auth():
-        st.error("Please authenticate to access the application")
-        return
+        return  # Authentication form will be shown
     
-    # Sidebar navigation
-    st.sidebar.title("🏠 Diksha Fundraising")
-    st.sidebar.markdown("---")
+    # Show auth status in sidebar
+    show_auth_status()
     
-    # Navigation menu
-    pages = {
-        "📊 Pipeline": "1_📊_Pipeline.py",
-        "🏷️ Donor Profile": "2_🏷️_Donor_Profile.py", 
-        "✉️ Composer": "3_✉️_Composer.py",
-        "🧩 Templates": "4_🧩_Templates.py",
-        "📝 Activity Log": "5_📝_Activity_Log.py"
-    }
+    # Main dashboard content
+    st.title("🏠 Diksha Fundraising Dashboard")
+    st.markdown("Welcome to the Diksha Foundation Fundraising Management System")
     
-    selected_page = st.sidebar.selectbox(
-        "Navigate to:",
-        list(pages.keys())
-    )
+    # Dashboard overview
+    col1, col2, col3, col4 = st.columns(4)
     
-    # Load the selected page
-    if selected_page:
-        page_file = pages[selected_page]
-        try:
-            # Import and run the page
-            exec(open(f"pages/{page_file}").read())
-        except FileNotFoundError:
-            st.error(f"Page {page_file} not found. Please check the file exists.")
-        except Exception as e:
-            st.error(f"Error loading page: {str(e)}")
+    with col1:
+        st.metric("Total Prospects", "150", "12")
+    with col2:
+        st.metric("Active Conversations", "45", "8")
+    with col3:
+        st.metric("Proposals Sent", "23", "5")
+    with col4:
+        st.metric("Closed Won", "12", "3")
+    
+    st.markdown("---")
+    
+    # Quick actions
+    st.subheader("🚀 Quick Actions")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        if st.button("📊 View Pipeline", use_container_width=True):
+            st.switch_page("pages/1_📊_Pipeline.py")
+    
+    with col2:
+        if st.button("🏷️ Donor Profiles", use_container_width=True):
+            st.switch_page("pages/2_🏷️_Donor_Profile.py")
+    
+    with col3:
+        if st.button("✉️ Email Composer", use_container_width=True):
+            st.switch_page("pages/3_✉️_Composer.py")
+    
+    with col4:
+        if st.button("📝 Activity Log", use_container_width=True):
+            st.switch_page("pages/5_📝_Activity_Log.py")
+    
+    # Recent activity
+    st.markdown("---")
+    st.subheader("📈 Recent Activity")
+    
+    # Sample recent activity data
+    recent_activities = [
+        {"action": "Email sent", "target": "ABC Corp", "time": "2 hours ago", "user": "John Doe"},
+        {"action": "Prospect added", "target": "XYZ Foundation", "time": "4 hours ago", "user": "Jane Smith"},
+        {"action": "Meeting scheduled", "target": "Tech Startup Inc", "time": "1 day ago", "user": "John Doe"},
+        {"action": "Proposal sent", "target": "Local Business", "time": "2 days ago", "user": "Jane Smith"},
+    ]
+    
+    for activity in recent_activities:
+        with st.container():
+            col1, col2, col3 = st.columns([2, 1, 1])
+            with col1:
+                st.write(f"**{activity['action']}** - {activity['target']}")
+            with col2:
+                st.write(activity['time'])
+            with col3:
+                st.write(activity['user'])
+            st.divider()
     
     # Footer
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("**Diksha Fundraising Bot**")
-    st.sidebar.markdown("Version 1.0")
+    st.markdown("---")
+    st.markdown("**Diksha Fundraising Bot** - Version 2.0")
+    st.markdown("Built with ❤️ for Diksha Foundation")
 
 if __name__ == "__main__":
     main()
-
-
