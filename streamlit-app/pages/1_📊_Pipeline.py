@@ -11,8 +11,7 @@ import os
 # Add lib directory to path
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'lib'))
 
-from api import log_activity
-from api_cache import get_cached_pipeline_data
+from api import log_activity, get_cached_pipeline_data
 from auth import require_auth, show_auth_status
 
 # Page configuration

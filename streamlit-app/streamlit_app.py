@@ -12,6 +12,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, current_dir)
 
 from lib.auth import check_auth, show_auth_status
+from lib.api import get_cached_donors, get_cached_pipeline_data
 
 # Page configuration
 st.set_page_config(
