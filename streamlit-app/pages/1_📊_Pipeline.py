@@ -38,8 +38,36 @@ def fallback_log_activity(activity_type: str, donor_id: str, details: str) -> bo
 def fallback_get_cached_pipeline_data():
     """Fallback function for get_cached_pipeline_data"""
     return [
-        {"id": "1", "donor": "Sample Donor", "amount": "$10,000", "status": "Prospect", "date": "2024-01-01"},
-        {"id": "2", "donor": "Another Donor", "amount": "$5,000", "status": "Qualified", "date": "2024-01-02"}
+        {
+            "id": "sample_donor_1",
+            "organization_name": "ABC Corporation",
+            "current_stage": "Initial Contact",
+            "assigned_to": "John Doe",
+            "next_action": "Send introduction email",
+            "next_action_date": "2024-01-15",
+            "last_contact_date": "2024-01-10",
+            "sector_tags": "Technology",
+            "probability": 25,
+            "contact_person": "Jane Smith",
+            "contact_email": "jane@abc.com",
+            "contact_role": "CFO",
+            "notes": "Interested in education technology initiatives"
+        },
+        {
+            "id": "sample_donor_2", 
+            "organization_name": "XYZ Foundation",
+            "current_stage": "Proposal Sent",
+            "assigned_to": "Sarah Johnson",
+            "next_action": "Follow up on proposal",
+            "next_action_date": "2024-01-20",
+            "last_contact_date": "2024-01-12",
+            "sector_tags": "Education",
+            "probability": 60,
+            "contact_person": "Mike Wilson",
+            "contact_email": "mike@xyz.org",
+            "contact_role": "Program Director",
+            "notes": "Very interested in our rural education program"
+        }
     ]
 
 def fallback_require_auth(func):
@@ -153,78 +181,99 @@ def main():
             st.cache_data.clear()
             st.rerun()
     
+    # Get pipeline data for metrics
+    pipeline_data = get_cached_pipeline_data()
+    
+    # Calculate metrics from real data
+    if pipeline_data and len(pipeline_data) > 0:
+        total_prospects = len(pipeline_data)
+        active_conversations = len([d for d in pipeline_data if d.get('current_stage') in ['Initial Contact', 'Intro Sent', 'Follow-up Sent']])
+        proposals_sent = len([d for d in pipeline_data if d.get('current_stage') in ['Proposal Sent', 'Negotiation']])
+        closed_won = len([d for d in pipeline_data if d.get('current_stage') == 'Closed Won'])
+    else:
+        total_prospects = 0
+        active_conversations = 0
+        proposals_sent = 0
+        closed_won = 0
+    
     # Pipeline overview metrics
     col1, col2, col3, col4 = st.columns(4)
     
-    # In a real app, these would come from the API
     with col1:
-        st.metric("Total Prospects", "150", "12", help="Total prospects in pipeline")
+        st.metric("Total Prospects", total_prospects, help="Total prospects in pipeline")
     with col2:
-        st.metric("Active Conversations", "45", "8", help="Currently engaged prospects")
+        st.metric("Active Conversations", active_conversations, help="Currently engaged prospects")
     with col3:
-        st.metric("Proposals Sent", "23", "5", help="Formal proposals sent")
+        st.metric("Proposals Sent", proposals_sent, help="Formal proposals sent")
     with col4:
-        st.metric("Closed Won", "12", "3", help="Successfully closed deals")
+        st.metric("Closed Won", closed_won, help="Successfully closed deals")
     
     st.markdown("---")
     
     # Filters
     st.subheader("🔍 Filters")
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
+    
+    # Get unique values for filters from real data
+    if pipeline_data and len(pipeline_data) > 0:
+        stages = ["All"] + sorted(list(set([d.get('current_stage', 'Unknown') for d in pipeline_data])))
+        sectors = ["All"] + sorted(list(set([d.get('sector_tags', 'Unknown') for d in pipeline_data if d.get('sector_tags')])))
+        assigned_to = ["All"] + sorted(list(set([d.get('assigned_to', 'Unassigned') for d in pipeline_data if d.get('assigned_to')])))
+    else:
+        stages = ["All", "Initial Contact", "Intro Sent", "Follow-up Sent", "Proposal Sent", "Negotiation", "Closed Won", "Closed Lost"]
+        sectors = ["All", "Technology", "Education", "Healthcare", "Environment"]
+        assigned_to = ["All", "John Doe", "Sarah Johnson", "Mike Wilson"]
     
     with col1:
-        stage_filter = st.selectbox(
-            "Stage:",
-            ["All", "Prospect", "Qualified", "Proposal", "Negotiation", "Closed Won", "Closed Lost"]
-        )
+        stage_filter = st.selectbox("Stage:", stages)
     
     with col2:
-        amount_filter = st.selectbox(
-            "Amount Range:",
-            ["All", "< $10K", "$10K - $50K", "$50K - $100K", "> $100K"]
-        )
+        sector_filter = st.selectbox("Sector:", sectors)
     
     with col3:
-        probability_filter = st.selectbox(
-            "Probability:",
-            ["All", "< 25%", "25% - 50%", "50% - 75%", "> 75%"]
-        )
+        assigned_filter = st.selectbox("Assigned To:", assigned_to)
+    
+    with col4:
+        search_term = st.text_input("🔍 Search:", placeholder="Organization name, contact, email...")
     
     # Pipeline data table
     st.subheader("📋 Pipeline Overview")
     
     with st.spinner("Loading pipeline data..."):
         try:
-            # Get pipeline data from API
-            pipeline_data = get_cached_pipeline_data()
-            
+            # Get pipeline data from API (already loaded above for metrics)
             if pipeline_data and len(pipeline_data) > 0:
-                df = pd.DataFrame(pipeline_data)
-                
                 # Apply filters
+                filtered_data = pipeline_data.copy()
+                
+                # Stage filter
                 if stage_filter != "All":
-                    df = df[df['stage'] == stage_filter]
+                    filtered_data = [d for d in filtered_data if d.get('current_stage') == stage_filter]
+                
+                # Sector filter
+                if sector_filter != "All":
+                    filtered_data = [d for d in filtered_data if d.get('sector_tags') == sector_filter]
+                
+                # Assigned to filter
+                if assigned_filter != "All":
+                    filtered_data = [d for d in filtered_data if d.get('assigned_to') == assigned_filter]
+                
+                # Search filter
+                if search_term:
+                    search_lower = search_term.lower()
+                    filtered_data = [d for d in filtered_data if 
+                                   search_lower in d.get('organization_name', '').lower() or
+                                   search_lower in d.get('contact_person', '').lower() or
+                                   search_lower in d.get('contact_email', '').lower()]
                 
                 # Display filtered data
-                if not df.empty:
-                    st.dataframe(
-                        df,
-                        use_container_width=True,
-                        column_config={
-                            "amount": st.column_config.NumberColumn(
-                                "Amount",
-                                format="$%d"
-                            ),
-                            "probability": st.column_config.ProgressColumn(
-                                "Probability",
-                                min_value=0,
-                                max_value=100
-                            ),
-                            "expected_close": st.column_config.DateColumn(
-                                "Expected Close"
-                            )
-                        }
-                    )
+                if filtered_data:
+                    # Create a more user-friendly display
+                    display_pipeline_data(filtered_data)
+                    
+                    # Show filter summary
+                    if any([stage_filter != "All", sector_filter != "All", assigned_filter != "All", search_term]):
+                        st.info(f"📊 Showing {len(filtered_data)} of {len(pipeline_data)} prospects")
                 else:
                     st.info("No data matches the selected filters.")
             else:
@@ -247,9 +296,25 @@ def main():
         if st.button("📊 Export Pipeline", use_container_width=True):
             try:
                 # Export functionality
-                pipeline_data = get_cached_pipeline_data()
                 if pipeline_data:
-                    df = pd.DataFrame(pipeline_data)
+                    # Create a simplified DataFrame for export
+                    export_data = []
+                    for donor in pipeline_data:
+                        export_data.append({
+                            'Organization': donor.get('organization_name', ''),
+                            'Stage': donor.get('current_stage', ''),
+                            'Contact Person': donor.get('contact_person', ''),
+                            'Email': donor.get('contact_email', ''),
+                            'Sector': donor.get('sector_tags', ''),
+                            'Assigned To': donor.get('assigned_to', ''),
+                            'Probability (%)': donor.get('probability', 0),
+                            'Next Action': donor.get('next_action', ''),
+                            'Next Action Date': donor.get('next_action_date', ''),
+                            'Last Contact': donor.get('last_contact_date', ''),
+                            'Notes': donor.get('notes', '')
+                        })
+                    
+                    df = pd.DataFrame(export_data)
                     csv = df.to_csv(index=False)
                     st.download_button(
                         "📥 Download CSV",
@@ -257,6 +322,7 @@ def main():
                         "pipeline_data.csv",
                         "text/csv"
                     )
+                    st.success(f"✅ Exported {len(export_data)} prospects")
                 else:
                     st.error("No data to export")
             except Exception as e:
@@ -274,33 +340,88 @@ def main():
         if st.button("🏠 Back to Dashboard", use_container_width=True):
             st.switch_page("streamlit_app.py")
 
+def display_pipeline_data(data):
+    """Display pipeline data in a user-friendly format"""
+    for i, donor in enumerate(data):
+        with st.expander(f"🏢 {donor.get('organization_name', 'Unknown Organization')} - {donor.get('current_stage', 'Unknown Stage')}", expanded=False):
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.markdown("**📋 Basic Info**")
+                st.write(f"**Organization:** {donor.get('organization_name', 'N/A')}")
+                st.write(f"**Stage:** {donor.get('current_stage', 'N/A')}")
+                st.write(f"**Sector:** {donor.get('sector_tags', 'N/A')}")
+                st.write(f"**Assigned To:** {donor.get('assigned_to', 'Unassigned')}")
+                
+            with col2:
+                st.markdown("**👤 Contact Info**")
+                st.write(f"**Contact:** {donor.get('contact_person', 'N/A')}")
+                st.write(f"**Email:** {donor.get('contact_email', 'N/A')}")
+                st.write(f"**Role:** {donor.get('contact_role', 'N/A')}")
+                st.write(f"**Last Contact:** {donor.get('last_contact_date', 'N/A')}")
+                
+            with col3:
+                st.markdown("**📈 Progress**")
+                probability = donor.get('probability', 0)
+                st.progress(probability / 100 if probability else 0)
+                st.write(f"**Probability:** {probability}%")
+                st.write(f"**Next Action:** {donor.get('next_action', 'N/A')}")
+                st.write(f"**Due Date:** {donor.get('next_action_date', 'N/A')}")
+            
+            # Notes section
+            if donor.get('notes'):
+                st.markdown("**📝 Notes**")
+                st.write(donor.get('notes'))
+            
+            # Action buttons
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                if st.button("👁️ View Details", key=f"view_{i}"):
+                    st.switch_page(f"pages/2_🏷️_Donor_Profile.py")
+            with col2:
+                if st.button("✉️ Send Email", key=f"email_{i}"):
+                    st.switch_page(f"pages/3_✉️_Composer.py")
+            with col3:
+                if st.button("📝 Add Note", key=f"note_{i}"):
+                    st.info("Note functionality coming soon!")
+            with col4:
+                if st.button("📊 Update Stage", key=f"stage_{i}"):
+                    st.info("Stage update functionality coming soon!")
+
 def display_sample_pipeline_data():
     """Display sample pipeline data when API is unavailable"""
-    sample_data = {
-        'Donor Name': ['ABC Corp', 'XYZ Foundation', 'Tech Startup Inc', 'Local Business'],
-        'Stage': ['Prospect', 'Qualified', 'Proposal', 'Negotiation'],
-        'Amount': [50000, 25000, 100000, 15000],
-        'Probability': [20, 40, 60, 80],
-        'Expected Close': ['2024-06-01', '2024-03-15', '2024-06-30', '2024-03-01'],
-        'Contact': ['john@abc.com', 'info@xyz.org', 'contact@tech.com', 'owner@local.biz']
-    }
-    
-    df = pd.DataFrame(sample_data)
-    st.dataframe(
-        df,
-        use_container_width=True,
-        column_config={
-            "Amount": st.column_config.NumberColumn(
-                "Amount",
-                format="$%d"
-            ),
-            "Probability": st.column_config.ProgressColumn(
-                "Probability (%)",
-                min_value=0,
-                max_value=100
-            )
+    sample_data = [
+        {
+            "organization_name": "ABC Corporation",
+            "current_stage": "Initial Contact",
+            "assigned_to": "John Doe",
+            "sector_tags": "Technology",
+            "contact_person": "Jane Smith",
+            "contact_email": "jane@abc.com",
+            "contact_role": "CFO",
+            "probability": 25,
+            "next_action": "Send introduction email",
+            "next_action_date": "2024-01-15",
+            "last_contact_date": "2024-01-10",
+            "notes": "Interested in education technology initiatives"
+        },
+        {
+            "organization_name": "XYZ Foundation",
+            "current_stage": "Proposal Sent",
+            "assigned_to": "Sarah Johnson",
+            "sector_tags": "Education",
+            "contact_person": "Mike Wilson",
+            "contact_email": "mike@xyz.org",
+            "contact_role": "Program Director",
+            "probability": 60,
+            "next_action": "Follow up on proposal",
+            "next_action_date": "2024-01-20",
+            "last_contact_date": "2024-01-12",
+            "notes": "Very interested in our rural education program"
         }
-    )
+    ]
+    
+    display_pipeline_data(sample_data)
 
 def add_new_prospect():
     """Show form to add new prospect"""
@@ -345,19 +466,44 @@ def add_new_prospect():
 def show_pipeline_analytics():
     """Show pipeline analytics"""
     with st.expander("📈 Pipeline Analytics", expanded=True):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("**Conversion Rates**")
-            st.metric("Prospect → Qualified", "30%", "5%")
-            st.metric("Qualified → Proposal", "65%", "10%")
-            st.metric("Proposal → Won", "45%", "-2%")
-        
-        with col2:
-            st.markdown("**Average Metrics**")
-            st.metric("Deal Size", "$35K", "$5K")
-            st.metric("Sales Cycle", "45 days", "-3 days")
-            st.metric("Win Rate", "18%", "2%")
+        if pipeline_data and len(pipeline_data) > 0:
+            # Calculate real analytics from data
+            total_prospects = len(pipeline_data)
+            stages = [d.get('current_stage', 'Unknown') for d in pipeline_data]
+            stage_counts = {}
+            for stage in stages:
+                stage_counts[stage] = stage_counts.get(stage, 0) + 1
+            
+            # Calculate average probability
+            probabilities = [d.get('probability', 0) for d in pipeline_data if d.get('probability')]
+            avg_probability = sum(probabilities) / len(probabilities) if probabilities else 0
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**📊 Stage Distribution**")
+                for stage, count in sorted(stage_counts.items()):
+                    percentage = (count / total_prospects) * 100
+                    st.metric(stage, f"{count} ({percentage:.1f}%)")
+            
+            with col2:
+                st.markdown("**📈 Key Metrics**")
+                st.metric("Total Prospects", total_prospects)
+                st.metric("Average Probability", f"{avg_probability:.1f}%")
+                
+                # Calculate active prospects (not closed)
+                active_stages = ['Initial Contact', 'Intro Sent', 'Follow-up Sent', 'Proposal Sent', 'Negotiation']
+                active_count = sum([count for stage, count in stage_counts.items() if stage in active_stages])
+                st.metric("Active Prospects", active_count)
+                
+                # Calculate closed won rate
+                closed_won = stage_counts.get('Closed Won', 0)
+                closed_lost = stage_counts.get('Closed Lost', 0)
+                total_closed = closed_won + closed_lost
+                win_rate = (closed_won / total_closed * 100) if total_closed > 0 else 0
+                st.metric("Win Rate", f"{win_rate:.1f}%")
+        else:
+            st.info("No data available for analytics. Connect to your Google Sheets to see real metrics.")
 
 if __name__ == "__main__":
     main()
