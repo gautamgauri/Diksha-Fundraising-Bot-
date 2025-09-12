@@ -8,11 +8,87 @@ import pandas as pd
 import sys
 import os
 
-# Add lib directory to path
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'lib'))
+# Robust import system for Railway deployment
+import importlib.util
 
-from api import log_activity, get_cached_pipeline_data
-from auth import require_auth, show_auth_status
+# Try multiple path strategies
+possible_paths = [
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'lib'),
+    os.path.join(os.path.dirname(__file__), '..', 'lib'),
+    '/app/lib',
+    './lib'
+]
+
+lib_path = None
+for path in possible_paths:
+    abs_path = os.path.abspath(path)
+    if os.path.exists(abs_path) and os.path.exists(os.path.join(abs_path, 'api.py')):
+        lib_path = abs_path
+        break
+
+if lib_path and lib_path not in sys.path:
+    sys.path.insert(0, lib_path)
+
+# Import with multiple fallback strategies
+log_activity = None
+get_cached_pipeline_data = None
+require_auth = None
+show_auth_status = None
+
+try:
+    from lib import log_activity, get_cached_pipeline_data, require_auth, show_auth_status
+except ImportError:
+    try:
+        from api import log_activity, get_cached_pipeline_data  # type: ignore
+        from auth import require_auth, show_auth_status  # type: ignore
+    except ImportError:
+        if lib_path:
+            try:
+                # Import api module
+                api_file_path = os.path.join(lib_path, 'api.py')
+                spec = importlib.util.spec_from_file_location("api", api_file_path)
+                api_module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(api_module)
+                log_activity = api_module.log_activity
+                get_cached_pipeline_data = api_module.get_cached_pipeline_data
+                
+                # Import auth module
+                auth_file_path = os.path.join(lib_path, 'auth.py')
+                spec = importlib.util.spec_from_file_location("auth", auth_file_path)
+                auth_module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(auth_module)
+                require_auth = auth_module.require_auth
+                show_auth_status = auth_module.show_auth_status
+            except Exception:
+                pass
+        
+        if not all([log_activity, get_cached_pipeline_data, require_auth, show_auth_status]):
+            for path in possible_paths:
+                try:
+                    abs_path = os.path.abspath(path)
+                    api_file_path = os.path.join(abs_path, 'api.py')
+                    auth_file_path = os.path.join(abs_path, 'auth.py')
+                    
+                    if os.path.exists(api_file_path) and os.path.exists(auth_file_path):
+                        # Import api module
+                        spec = importlib.util.spec_from_file_location("api", api_file_path)
+                        api_module = importlib.util.module_from_spec(spec)
+                        spec.loader.exec_module(api_module)
+                        log_activity = api_module.log_activity
+                        get_cached_pipeline_data = api_module.get_cached_pipeline_data
+                        
+                        # Import auth module
+                        spec = importlib.util.spec_from_file_location("auth", auth_file_path)
+                        auth_module = importlib.util.module_from_spec(spec)
+                        spec.loader.exec_module(auth_module)
+                        require_auth = auth_module.require_auth
+                        show_auth_status = auth_module.show_auth_status
+                        break
+                except Exception:
+                    continue
+
+if not all([log_activity, get_cached_pipeline_data, require_auth, show_auth_status]):
+    raise ImportError("Could not import required functions from any available source")
 
 # Page configuration
 st.set_page_config(

@@ -8,12 +8,65 @@ import sys
 import os
 from datetime import datetime
 
-# Add current directory to path for lib imports
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-sys.path.insert(0, parent_dir)
+# Robust import system for Railway deployment
+import importlib.util
 
-from lib.api import get_donors, get_donor_profile
+# Try multiple path strategies
+possible_paths = [
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'lib'),
+    os.path.join(os.path.dirname(__file__), '..', 'lib'),
+    '/app/lib',
+    './lib'
+]
+
+lib_path = None
+for path in possible_paths:
+    abs_path = os.path.abspath(path)
+    if os.path.exists(abs_path) and os.path.exists(os.path.join(abs_path, 'api.py')):
+        lib_path = abs_path
+        break
+
+if lib_path and lib_path not in sys.path:
+    sys.path.insert(0, lib_path)
+
+# Import with multiple fallback strategies
+get_donors = None
+get_donor_profile = None
+
+try:
+    from lib.api import get_donors, get_donor_profile
+except ImportError:
+    try:
+        from api import get_donors, get_donor_profile  # type: ignore
+    except ImportError:
+        if lib_path:
+            try:
+                api_file_path = os.path.join(lib_path, 'api.py')
+                spec = importlib.util.spec_from_file_location("api", api_file_path)
+                api_module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(api_module)
+                get_donors = api_module.get_donors
+                get_donor_profile = api_module.get_donor_profile
+            except Exception:
+                pass
+        
+        if not get_donors or not get_donor_profile:
+            for path in possible_paths:
+                try:
+                    abs_path = os.path.abspath(path)
+                    api_file_path = os.path.join(abs_path, 'api.py')
+                    if os.path.exists(api_file_path):
+                        spec = importlib.util.spec_from_file_location("api", api_file_path)
+                        api_module = importlib.util.module_from_spec(spec)
+                        spec.loader.exec_module(api_module)
+                        get_donors = api_module.get_donors
+                        get_donor_profile = api_module.get_donor_profile
+                        break
+                except Exception:
+                    continue
+
+if not get_donors or not get_donor_profile:
+    raise ImportError("Could not import get_donors and get_donor_profile from any available source")
 
 def main():
     st.title("🏷️ Donor Profiles")

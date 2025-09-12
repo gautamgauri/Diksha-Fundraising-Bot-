@@ -8,12 +8,80 @@ import sys
 import os
 from datetime import datetime
 
-# Add current directory to path for lib imports
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-sys.path.insert(0, parent_dir)
+# Robust import system for Railway deployment
+import importlib.util
 
-from lib.api import get_donors, send_email
+# Try multiple path strategies
+possible_paths = [
+    # Strategy 1: Standard lib path
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'lib'),
+    # Strategy 2: Current directory lib
+    os.path.join(os.path.dirname(__file__), '..', 'lib'),
+    # Strategy 3: Absolute lib path
+    '/app/lib',
+    # Strategy 4: Relative lib path
+    './lib'
+]
+
+lib_path = None
+for path in possible_paths:
+    abs_path = os.path.abspath(path)
+    if os.path.exists(abs_path) and os.path.exists(os.path.join(abs_path, 'api.py')):
+        lib_path = abs_path
+        break
+
+if lib_path and lib_path not in sys.path:
+    sys.path.insert(0, lib_path)
+
+# Import with multiple fallback strategies
+get_donors = None
+send_email = None
+
+# Strategy 1: Try lib package import
+try:
+    from lib.api import get_donors, send_email
+    print("✅ Using lib package import")
+except ImportError:
+    # Strategy 2: Try direct module import
+    try:
+        from api import get_donors, send_email  # type: ignore
+        print("✅ Using direct module import")
+    except ImportError:
+        # Strategy 3: Use importlib with found path
+        if lib_path:
+            try:
+                api_file_path = os.path.join(lib_path, 'api.py')
+                spec = importlib.util.spec_from_file_location("api", api_file_path)
+                api_module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(api_module)
+                get_donors = api_module.get_donors
+                send_email = api_module.send_email
+                print("✅ Using importlib fallback")
+            except Exception as e:
+                print(f"❌ Importlib failed: {e}")
+        else:
+            print("❌ No valid lib path found")
+        
+        # Strategy 4: Try all possible paths with importlib
+        if not get_donors or not send_email:
+            for path in possible_paths:
+                try:
+                    abs_path = os.path.abspath(path)
+                    api_file_path = os.path.join(abs_path, 'api.py')
+                    if os.path.exists(api_file_path):
+                        spec = importlib.util.spec_from_file_location("api", api_file_path)
+                        api_module = importlib.util.module_from_spec(spec)
+                        spec.loader.exec_module(api_module)
+                        get_donors = api_module.get_donors
+                        send_email = api_module.send_email
+                        print(f"✅ Using importlib with path: {abs_path}")
+                        break
+                except Exception as e:
+                    continue
+
+# Verify imports
+if not get_donors or not send_email:
+    raise ImportError("Could not import get_donors and send_email from any available source")
 
 def main():
     st.title("✉️ Email Composer")

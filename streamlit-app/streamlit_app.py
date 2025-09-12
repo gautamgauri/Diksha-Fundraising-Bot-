@@ -7,10 +7,62 @@ import streamlit as st
 import sys
 import os
 
-# Add the lib directory to the path
-sys.path.append(os.path.join(os.path.dirname(__file__), 'lib'))
+# Robust import system for Railway deployment
+import importlib.util
 
-from auth import check_auth
+# Try multiple path strategies
+possible_paths = [
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lib'),
+    os.path.join(os.path.dirname(__file__), 'lib'),
+    '/app/lib',
+    './lib'
+]
+
+lib_path = None
+for path in possible_paths:
+    abs_path = os.path.abspath(path)
+    if os.path.exists(abs_path) and os.path.exists(os.path.join(abs_path, 'auth.py')):
+        lib_path = abs_path
+        break
+
+if lib_path and lib_path not in sys.path:
+    sys.path.insert(0, lib_path)
+
+# Import with multiple fallback strategies
+check_auth = None
+
+try:
+    from lib import check_auth
+except ImportError:
+    try:
+        from auth import check_auth  # type: ignore
+    except ImportError:
+        if lib_path:
+            try:
+                auth_file_path = os.path.join(lib_path, 'auth.py')
+                spec = importlib.util.spec_from_file_location("auth", auth_file_path)
+                auth_module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(auth_module)
+                check_auth = auth_module.check_auth
+            except Exception:
+                pass
+        
+        if not check_auth:
+            for path in possible_paths:
+                try:
+                    abs_path = os.path.abspath(path)
+                    auth_file_path = os.path.join(abs_path, 'auth.py')
+                    if os.path.exists(auth_file_path):
+                        spec = importlib.util.spec_from_file_location("auth", auth_file_path)
+                        auth_module = importlib.util.module_from_spec(spec)
+                        spec.loader.exec_module(auth_module)
+                        check_auth = auth_module.check_auth
+                        break
+                except Exception:
+                    continue
+
+if not check_auth:
+    raise ImportError("Could not import check_auth from any available source")
 
 # Page configuration
 st.set_page_config(
