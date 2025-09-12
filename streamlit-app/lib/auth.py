@@ -5,29 +5,45 @@ Handles user authentication and authorization
 
 import streamlit as st
 import os
-from typing import Optional, List
+from typing import Optional, List, Dict
+
+def get_user_credentials() -> Dict[str, str]:
+    """
+    Get user credentials from environment variable or use defaults
+    
+    Returns:
+        Dictionary mapping email addresses to passwords
+    """
+    # Try to get from environment variable first
+    credentials_str = os.getenv("USER_CREDENTIALS", "")
+    if credentials_str:
+        credentials = {}
+        for pair in credentials_str.split(","):
+            if ":" in pair:
+                email, password = pair.split(":", 1)
+                credentials[email.strip()] = password.strip()
+        return credentials
+    
+    # Default fallback for development - individual passwords for each user
+    return {
+        "admin@dikshafoundation.org": "admin2024",
+        "gautamgauri@dikshafoundation.org": "gautam2024",
+        "gautam.gauri@dikshafoundation.org": "gautam2024",
+        "nisha.kumari@dikshafoundation.org": "nisha2024",
+        "neha.anand@dikshafoundation.org": "neha2024",
+        "nishant.kumar@dikshafoundation.org": "nishant2024",
+        "shivam.mishra@dikshafoundation.org": "shivam2024"
+    }
 
 def get_allowed_users() -> List[str]:
     """
-    Get list of allowed users from environment variable
+    Get list of allowed users from credentials
     
     Returns:
         List of allowed email addresses
     """
-    allowed_users_str = os.getenv("ALLOWED_USERS", "")
-    if not allowed_users_str:
-        # Default fallback for development
-        return [
-            "admin@dikshafoundation.org",
-            "gautamgauri@dikshafoundation.org",
-            "gautam.gauri@dikshafoundation.org",
-            "nisha.kumari@dikshafoundation.org",
-            "neha.anand@dikshafoundation.org",
-            "nishant.kumar@dikshafoundation.org",
-            "shivam.mishra@dikshafoundation.org"
-        ]
-    
-    return [email.strip() for email in allowed_users_str.split(",")]
+    credentials = get_user_credentials()
+    return list(credentials.keys())
 
 def check_auth() -> bool:
     """
@@ -92,17 +108,24 @@ def authenticate_user(email: str, password: str) -> bool:
     if not email or not password:
         return False
     
+    # Get user credentials
+    credentials = get_user_credentials()
+    
     # Check if email is in allowed users list
-    allowed_users = get_allowed_users()
-    if email.lower() not in [user.lower() for user in allowed_users]:
+    if email.lower() not in [user.lower() for user in credentials.keys()]:
         st.error(f"❌ Email {email} is not authorized to access this application.")
         return False
     
-    # Simple password check (in production, use proper authentication)
-    # This is a basic implementation - replace with your actual auth system
-    expected_password = os.getenv("APP_PASSWORD", "diksha2024")
+    # Check password for specific user
+    expected_password = credentials.get(email.lower())
+    if not expected_password:
+        # Try case-insensitive match
+        for user_email, user_password in credentials.items():
+            if user_email.lower() == email.lower():
+                expected_password = user_password
+                break
     
-    if password == expected_password:
+    if expected_password and password == expected_password:
         return True
     
     # You could also integrate with external auth systems here
@@ -114,7 +137,21 @@ def logout():
     """Logout the current user"""
     st.session_state.authenticated = False
     st.session_state.user_email = None
-    st.rerun()
+
+def show_user_credentials():
+    """Display current user credentials for reference (admin only)"""
+    if st.session_state.get("user_email") == "admin@dikshafoundation.org":
+        with st.expander("🔑 User Credentials (Admin Only)", expanded=False):
+            st.markdown("**Current User Credentials:**")
+            credentials = get_user_credentials()
+            for email, password in credentials.items():
+                st.code(f"{email} : {password}")
+            
+            st.markdown("**Environment Variable Format:**")
+            env_format = ",".join([f"{email}:{password}" for email, password in credentials.items()])
+            st.code(f"USER_CREDENTIALS={env_format}")
+            
+            st.info("💡 Set the USER_CREDENTIALS environment variable in Railway to override these defaults.")
 
 def get_current_user() -> Optional[str]:
     """

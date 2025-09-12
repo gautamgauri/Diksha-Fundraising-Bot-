@@ -351,6 +351,13 @@ def main():
         st.title("🏠 Navigation")
         st.markdown("---")
         
+        # Show user credentials for admin (if available)
+        try:
+            from lib.auth import show_user_credentials
+            show_user_credentials()
+        except:
+            pass
+        
         # Quick navigation buttons
         if st.button("📊 Pipeline", use_container_width=True):
             st.switch_page("pages/1_📊_Pipeline.py")
