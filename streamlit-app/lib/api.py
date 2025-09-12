@@ -11,6 +11,16 @@ from typing import List, Dict, Any, Optional
 # Get API base URL from environment
 API_BASE = os.getenv("API_BASE", "http://localhost:5000")
 
+# For Railway deployment, try to detect backend URL
+if not API_BASE or API_BASE == "http://localhost:5000":
+    # Try to get backend URL from Railway environment
+    backend_url = os.getenv("RAILWAY_PUBLIC_DOMAIN")
+    if backend_url:
+        API_BASE = f"https://{backend_url}"
+    else:
+        # Fallback to localhost for development
+        API_BASE = "http://localhost:5000"
+
 def make_api_request(endpoint: str, method: str = "GET", data: Optional[Dict] = None) -> Optional[Dict]:
     """
     Make a request to the backend API or use direct Google Sheets integration

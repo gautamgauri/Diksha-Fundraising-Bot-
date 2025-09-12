@@ -17,6 +17,15 @@ logger = logging.getLogger(__name__)
 # Initialize Flask app
 app = Flask(__name__)
 
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    """Health check endpoint for Railway"""
+    return jsonify({
+        "status": "healthy",
+        "service": "Diksha Fundraising Backend",
+        "timestamp": datetime.now().isoformat()
+    })
+
 # Import shared backend
 try:
     from backend import backend_manager
