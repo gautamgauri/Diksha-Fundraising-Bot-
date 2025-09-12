@@ -97,6 +97,31 @@ def get_activities():
             "error": str(e)
         }), 500
 
+@app.route('/api/proposals', methods=['GET'])
+def get_proposals():
+    """Get proposals data from Google Sheets"""
+    try:
+        if not sheets_db or not sheets_db.initialized:
+            return jsonify({
+                "success": False,
+                "error": "Google Sheets not connected"
+            }), 503
+        
+        # Get proposals data from Google Sheets
+        proposals_data = sheets_db.get_proposals()
+        
+        return jsonify({
+            "success": True,
+            "data": proposals_data
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting proposals: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
 @app.route('/api/donor/<donor_id>', methods=['GET'])
 def get_donor(donor_id):
     """Get specific donor information"""

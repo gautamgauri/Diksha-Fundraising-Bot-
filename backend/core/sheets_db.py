@@ -261,6 +261,59 @@ class SheetsDB:
             logger.error(f"❌ Error getting interaction log: {e}")
             return []
     
+    def get_proposals(self) -> List[Dict[str, Any]]:
+        """
+        Get proposals data from the Proposals Tracker tab
+        
+        Returns:
+            List[Dict]: Proposals data
+        """
+        if not self.initialized:
+            logger.error("❌ SheetsDB not initialized")
+            return []
+        
+        try:
+            # Read data from the Proposals Tracker tab
+            range_name = "Proposals Tracker!A:H"
+            result = self.sheets_service.spreadsheets().values().get(
+                spreadsheetId=self.sheet_id,
+                range=range_name
+            ).execute()
+            
+            values = result.get('values', [])
+            if not values:
+                logger.warning("⚠️ No data found in Proposals Tracker tab")
+                return []
+            
+            # Skip header row
+            data_rows = values[1:]
+            
+            # Convert to list of dictionaries
+            proposals = []
+            headers = ['Organization Name', 'Proposal Title', 'Amount Requested', 'Submission Date', 'Decision Deadline', 'Status', 'Assigned Writer', 'Final Amount']
+            
+            for row in data_rows:
+                # Skip empty rows
+                if not any(cell.strip() for cell in row if cell):
+                    continue
+                
+                # Create proposal dictionary
+                proposal = {}
+                for i, header in enumerate(headers):
+                    proposal[header] = row[i] if i < len(row) else ""
+                
+                proposals.append(proposal)
+            
+            logger.info(f"✅ Retrieved {len(proposals)} proposals")
+            return proposals
+            
+        except HttpError as e:
+            logger.error(f"❌ HTTP error getting proposals: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"❌ Error getting proposals: {e}")
+            return []
+    
     def find_org(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
         """
         Fuzzy search for organizations by name

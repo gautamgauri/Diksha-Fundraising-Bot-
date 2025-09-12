@@ -146,8 +146,8 @@ def main():
             st.switch_page("pages/3_✉️_Composer.py")
     
     with col3:
-        if st.button("📝 Add Activity", use_container_width=True):
-            st.switch_page("pages/5_📝_Activity_Log.py")
+        if st.button("📋 View Proposals", use_container_width=True):
+            st.switch_page("pages/6_📋_Proposals.py")
     
     # Recent activities preview
     st.subheader("📋 Recent Activities")
@@ -182,6 +182,9 @@ def main():
         
         if st.button("📝 Activity Log", use_container_width=True):
             st.switch_page("pages/5_📝_Activity_Log.py")
+        
+        if st.button("📋 Proposals", use_container_width=True):
+            st.switch_page("pages/6_📋_Proposals.py")
         
         st.markdown("---")
         st.markdown("**Diksha Fundraising Bot**")
