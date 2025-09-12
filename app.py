@@ -74,11 +74,13 @@ except Exception as e:
 if backend_manager:
     donor_service = backend_manager.donor_service
     email_service = backend_manager.email_service
+    email_generator = backend_manager.email_generator
     pipeline_service = backend_manager.pipeline_service
     template_service = backend_manager.template_service
     context_helpers = backend_manager.context_helpers
     deepseek_client = backend_manager.deepseek_client
     sheets_db = backend_manager.sheets_db
+    cache_manager = backend_manager.cache_manager
 else:
     donor_service = None
     email_service = None
@@ -2147,7 +2149,7 @@ def validate_startup_components():
         validation_results["google_sheets"] = {"status": "❌ Failed", "details": "Initialization failed"}
     
     # Check Google Drive
-    if drive_service:
+    if email_generator and email_generator.drive_service:
         validation_results["google_drive"] = {"status": "✅ Connected", "details": "Drive service ready"}
     
     # Check Slack Bot

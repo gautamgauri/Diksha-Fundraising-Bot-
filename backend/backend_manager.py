@@ -32,6 +32,7 @@ class BackendManager:
         self.deepseek_client = None
         self.drive_service = None
         self.google_auth = create_google_clients  # Reference to the function
+        self.cache_manager = cache_manager  # Global cache manager instance
         
         # Services
         self.donor_service = None
