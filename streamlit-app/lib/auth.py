@@ -17,7 +17,13 @@ def get_allowed_users() -> List[str]:
     allowed_users_str = os.getenv("ALLOWED_USERS", "")
     if not allowed_users_str:
         # Default fallback for development
-        return ["admin@dikshafoundation.org"]
+        return [
+            "admin@dikshafoundation.org",
+            "gautamgauri@dikshafoundation.org",
+            "gautam.gauri@dikshafoundation.org",
+            "tanya.pandey@dikshafoundation.org",
+            "nisha.kumari@dikshafoundation.org"
+        ]
     
     return [email.strip() for email in allowed_users_str.split(",")]
 
