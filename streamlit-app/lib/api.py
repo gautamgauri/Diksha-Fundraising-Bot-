@@ -13,7 +13,7 @@ API_BASE = os.getenv("API_BASE", "http://localhost:5000")
 
 def make_api_request(endpoint: str, method: str = "GET", data: Optional[Dict] = None) -> Optional[Dict]:
     """
-    Make a request to the backend API
+    Make a request to the backend API or use direct Google Sheets integration
     
     Args:
         endpoint: API endpoint (e.g., "/api/donors")
@@ -23,29 +23,27 @@ def make_api_request(endpoint: str, method: str = "GET", data: Optional[Dict] = 
     Returns:
         API response data or None if error
     """
+    # Try backend API first
     try:
         url = f"{API_BASE}{endpoint}"
         
         if method == "GET":
-            response = requests.get(url, timeout=10)
+            response = requests.get(url, timeout=5)
         elif method == "POST":
-            response = requests.post(url, json=data, timeout=10)
+            response = requests.post(url, json=data, timeout=5)
         elif method == "PUT":
-            response = requests.put(url, json=data, timeout=10)
+            response = requests.put(url, json=data, timeout=5)
         elif method == "DELETE":
-            response = requests.delete(url, timeout=10)
+            response = requests.delete(url, timeout=5)
         else:
             raise ValueError(f"Unsupported HTTP method: {method}")
         
         response.raise_for_status()
         return response.json()
         
-    except requests.exceptions.ConnectionError:
-        st.error("❌ Unable to connect to backend API. Please check if the server is running.")
-        return None
-    except requests.exceptions.Timeout:
-        st.error("⏱️ Request timed out. Please try again.")
-        return None
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+        # Backend not available, use direct Google Sheets integration
+        return get_data_directly_from_sheets(endpoint)
     except requests.exceptions.HTTPError as e:
         st.error(f"❌ API Error: {e.response.status_code} - {e.response.text}")
         return None
@@ -53,17 +51,79 @@ def make_api_request(endpoint: str, method: str = "GET", data: Optional[Dict] = 
         st.error(f"❌ Unexpected error: {str(e)}")
         return None
 
+def get_data_directly_from_sheets(endpoint: str) -> Optional[Dict]:
+    """
+    Get data directly from Google Sheets when backend is not available
+    
+    Args:
+        endpoint: API endpoint to determine which data to fetch
+    
+    Returns:
+        Data from Google Sheets or None if error
+    """
+    try:
+        # Import Google Sheets functionality directly
+        import sys
+        import os
+        
+        # Add parent directory to path to access backend modules
+        parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        if parent_dir not in sys.path:
+            sys.path.insert(0, parent_dir)
+        
+        from backend.core.sheets_db import SheetsDB
+        
+        # Initialize SheetsDB
+        sheets_db = SheetsDB()
+        if not sheets_db.initialized:
+            return None
+        
+        # Route to appropriate data based on endpoint
+        if endpoint == "/api/donors" or endpoint == "/api/pipeline":
+            data = sheets_db.get_pipeline_data()
+        elif endpoint == "/api/activities":
+            data = sheets_db.get_interaction_log()
+        elif endpoint == "/api/proposals":
+            data = sheets_db.get_proposals()
+        elif endpoint == "/api/alerts":
+            data = sheets_db.get_alerts()
+        else:
+            return None
+        
+        return {"success": True, "data": data}
+        
+    except Exception as e:
+        print(f"Direct sheets access failed: {e}")
+        return None
+
 def get_donors() -> Optional[List[Dict]]:
     """Get list of all donors"""
-    return make_api_request("/api/donors")
+    result = make_api_request("/api/donors")
+    if result and isinstance(result, dict) and result.get("success"):
+        return result.get("data", [])
+    return result
 
 def get_donor_profile(donor_id: str) -> Optional[Dict]:
     """Get detailed donor profile"""
-    return make_api_request(f"/api/donors/{donor_id}")
+    result = make_api_request(f"/api/donors/{donor_id}")
+    if result and isinstance(result, dict) and result.get("success"):
+        return result.get("data")
+    return result
 
 def get_pipeline_data() -> Optional[List[Dict]]:
     """Get fundraising pipeline data"""
-    return make_api_request("/api/pipeline")
+    result = make_api_request("/api/pipeline")
+    if result and isinstance(result, dict) and result.get("success"):
+        return result.get("data", [])
+    return result
+
+@st.cache_data(ttl=300)  # Cache for 5 minutes
+def get_cached_pipeline_data() -> Optional[List[Dict]]:
+    """Get cached pipeline data"""
+    result = get_pipeline_data()
+    if result and isinstance(result, dict) and result.get("success"):
+        return result.get("data", [])
+    return result
 
 def get_templates() -> Optional[List[Dict]]:
     """Get email templates"""
@@ -71,15 +131,24 @@ def get_templates() -> Optional[List[Dict]]:
 
 def get_activity_log() -> Optional[List[Dict]]:
     """Get activity log entries"""
-    return make_api_request("/api/activities")
+    result = make_api_request("/api/activities")
+    if result and isinstance(result, dict) and result.get("success"):
+        return result.get("data", [])
+    return result
 
 def get_proposals() -> Optional[List[Dict]]:
     """Get proposals data"""
-    return make_api_request("/api/proposals")
+    result = make_api_request("/api/proposals")
+    if result and isinstance(result, dict) and result.get("success"):
+        return result.get("data", [])
+    return result
 
 def get_alerts() -> Optional[List[Dict]]:
     """Get alerts data"""
-    return make_api_request("/api/alerts")
+    result = make_api_request("/api/alerts")
+    if result and isinstance(result, dict) and result.get("success"):
+        return result.get("data", [])
+    return result
 
 def send_email(recipient: str, subject: str, body: str) -> bool:
     """
