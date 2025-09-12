@@ -48,15 +48,26 @@ def health_check():
 
 # Import shared backend with better error handling
 backend_manager = None
+logger.info("🔄 Attempting to import backend...")
+
 try:
+    # Try importing backend components one by one to isolate issues
+    logger.info("📦 Importing backend package...")
     from backend import backend_manager
-    logger.info("✅ Shared backend imported successfully")
+    logger.info("✅ Backend package imported successfully")
+    
+    if backend_manager:
+        logger.info("✅ Backend manager available")
+    else:
+        logger.warning("⚠️ Backend manager is None")
+        
 except ImportError as e:
     logger.warning(f"⚠️ Backend import failed: {e}")
     logger.warning("App will run with limited functionality")
     backend_manager = None
 except Exception as e:
     logger.error(f"❌ Unexpected error importing backend: {e}")
+    logger.error(f"Error type: {type(e).__name__}")
     backend_manager = None
 
 # Get services from backend manager
@@ -2235,14 +2246,18 @@ if __name__ == '__main__':
     print("="*60)
     
     # Get port from environment variable (Railway requirement)
-    port = int(os.getenv('PORT', port))
+    port = int(os.getenv('PORT', 5000))
     
     print(f"🚀 Starting Flask app on port {port}")
     print(f"🌐 Health check available at: http://0.0.0.0:{port}/api/health")
     print(f"📊 Root endpoint available at: http://0.0.0.0:{port}/")
+    print(f"🔧 Backend status: {'Available' if backend_manager else 'Limited'}")
     
     try:
         app.run(host='0.0.0.0', port=port, debug=False)
     except Exception as e:
         print(f"❌ Failed to start Flask app: {e}")
+        print(f"Error type: {type(e).__name__}")
+        import traceback
+        traceback.print_exc()
         raise
