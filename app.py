@@ -46,13 +46,17 @@ def health_check():
             "error": str(e)
         }), 200
 
-# Import shared backend
+# Import shared backend with better error handling
+backend_manager = None
 try:
     from backend import backend_manager
     logger.info("✅ Shared backend imported successfully")
 except ImportError as e:
-    logger.error(f"❌ Missing shared backend: {e}")
-    logger.error("Please ensure backend package is properly configured")
+    logger.warning(f"⚠️ Backend import failed: {e}")
+    logger.warning("App will run with limited functionality")
+    backend_manager = None
+except Exception as e:
+    logger.error(f"❌ Unexpected error importing backend: {e}")
     backend_manager = None
 
 # Get services from backend manager
@@ -2232,4 +2236,13 @@ if __name__ == '__main__':
     
     # Get port from environment variable (Railway requirement)
     port = int(os.getenv('PORT', port))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    
+    print(f"🚀 Starting Flask app on port {port}")
+    print(f"🌐 Health check available at: http://0.0.0.0:{port}/api/health")
+    print(f"📊 Root endpoint available at: http://0.0.0.0:{port}/")
+    
+    try:
+        app.run(host='0.0.0.0', port=port, debug=False)
+    except Exception as e:
+        print(f"❌ Failed to start Flask app: {e}")
+        raise
