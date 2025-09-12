@@ -37,3 +37,5 @@ filesToClean.forEach(file => {
 });
 
 console.log('🎉 Build cache cleanup complete!');
+
+
