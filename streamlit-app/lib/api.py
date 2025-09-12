@@ -62,31 +62,23 @@ def get_data_directly_from_sheets(endpoint: str) -> Optional[Dict]:
         Data from Google Sheets or None if error
     """
     try:
-        # Import Google Sheets functionality directly
-        import sys
-        import os
+        # Import self-contained Google Sheets integration
+        from .sheets_integration import sheets_integration
         
-        # Add parent directory to path to access backend modules
-        parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        if parent_dir not in sys.path:
-            sys.path.insert(0, parent_dir)
-        
-        from backend.core.sheets_db import SheetsDB
-        
-        # Initialize SheetsDB
-        sheets_db = SheetsDB()
-        if not sheets_db.initialized:
+        # Check if integration is initialized
+        if not sheets_integration.initialized:
+            print("❌ Google Sheets integration not initialized")
             return None
         
         # Route to appropriate data based on endpoint
         if endpoint == "/api/donors" or endpoint == "/api/pipeline":
-            data = sheets_db.get_pipeline_data()
+            data = sheets_integration.get_pipeline_data()
         elif endpoint == "/api/activities":
-            data = sheets_db.get_interaction_log()
+            data = sheets_integration.get_interaction_log()
         elif endpoint == "/api/proposals":
-            data = sheets_db.get_proposals()
+            data = sheets_integration.get_proposals()
         elif endpoint == "/api/alerts":
-            data = sheets_db.get_alerts()
+            data = sheets_integration.get_alerts()
         else:
             return None
         
