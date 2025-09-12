@@ -122,6 +122,31 @@ def get_proposals():
             "error": str(e)
         }), 500
 
+@app.route('/api/alerts', methods=['GET'])
+def get_alerts():
+    """Get alerts data from Google Sheets"""
+    try:
+        if not sheets_db or not sheets_db.initialized:
+            return jsonify({
+                "success": False,
+                "error": "Google Sheets not connected"
+            }), 503
+        
+        # Get alerts data from Google Sheets
+        alerts_data = sheets_db.get_alerts()
+        
+        return jsonify({
+            "success": True,
+            "data": alerts_data
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting alerts: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
 @app.route('/api/donor/<donor_id>', methods=['GET'])
 def get_donor(donor_id):
     """Get specific donor information"""

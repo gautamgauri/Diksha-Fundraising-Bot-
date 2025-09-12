@@ -314,6 +314,59 @@ class SheetsDB:
             logger.error(f"❌ Error getting proposals: {e}")
             return []
     
+    def get_alerts(self) -> List[Dict[str, Any]]:
+        """
+        Get alerts data from the Deadline Alerts Log tab
+        
+        Returns:
+            List[Dict]: Alerts data
+        """
+        if not self.initialized:
+            logger.error("❌ SheetsDB not initialized")
+            return []
+        
+        try:
+            # Read data from the Deadline Alerts Log tab
+            range_name = "Deadline Alerts Log!A:G"
+            result = self.sheets_service.spreadsheets().values().get(
+                spreadsheetId=self.sheet_id,
+                range=range_name
+            ).execute()
+            
+            values = result.get('values', [])
+            if not values:
+                logger.warning("⚠️ No data found in Deadline Alerts Log tab")
+                return []
+            
+            # Skip header row
+            data_rows = values[1:]
+            
+            # Convert to list of dictionaries
+            alerts = []
+            headers = ['Alert Timestamp', 'Organization', 'Proposal Title', 'Deadline', 'Urgency Level', 'Assigned To', 'Notes']
+            
+            for row in data_rows:
+                # Skip empty rows
+                if not any(cell.strip() for cell in row if cell):
+                    continue
+                
+                # Create alert dictionary
+                alert = {}
+                for i, header in enumerate(headers):
+                    alert[header] = row[i] if i < len(row) else ""
+                
+                alerts.append(alert)
+            
+            logger.info(f"✅ Retrieved {len(alerts)} alerts")
+            return alerts
+            
+        except HttpError as e:
+            logger.error(f"❌ HTTP error getting alerts: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"❌ Error getting alerts: {e}")
+            return []
+    
     def find_org(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
         """
         Fuzzy search for organizations by name
