@@ -208,6 +208,59 @@ class SheetsDB:
             logger.error(f"❌ Error getting pipeline data: {e}")
             return {}
     
+    def get_interaction_log(self) -> List[Dict[str, Any]]:
+        """
+        Get interaction log data from the Interaction Log tab
+        
+        Returns:
+            List[Dict]: Interaction log entries
+        """
+        if not self.initialized:
+            logger.error("❌ SheetsDB not initialized")
+            return []
+        
+        try:
+            # Read data from the Interaction Log tab
+            range_name = "Interaction Log!A:H"
+            result = self.sheets_service.spreadsheets().values().get(
+                spreadsheetId=self.sheet_id,
+                range=range_name
+            ).execute()
+            
+            values = result.get('values', [])
+            if not values:
+                logger.warning("⚠️ No data found in Interaction Log tab")
+                return []
+            
+            # Skip header row
+            data_rows = values[1:]
+            
+            # Convert to list of dictionaries
+            interactions = []
+            headers = ['Date', 'Organization Name', 'Interaction Type', 'Team Member', 'Summary/Notes', 'Next Steps', 'Follow-up Date', 'Attachments']
+            
+            for row in data_rows:
+                # Skip empty rows
+                if not any(cell.strip() for cell in row if cell):
+                    continue
+                
+                # Create interaction dictionary
+                interaction = {}
+                for i, header in enumerate(headers):
+                    interaction[header] = row[i] if i < len(row) else ""
+                
+                interactions.append(interaction)
+            
+            logger.info(f"✅ Retrieved {len(interactions)} interaction log entries")
+            return interactions
+            
+        except HttpError as e:
+            logger.error(f"❌ HTTP error getting interaction log: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"❌ Error getting interaction log: {e}")
+            return []
+    
     def find_org(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
         """
         Fuzzy search for organizations by name

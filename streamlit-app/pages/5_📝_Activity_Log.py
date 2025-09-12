@@ -32,7 +32,28 @@ if lib_path and lib_path not in sys.path:
 
 # Fallback function
 def fallback_get_activity_log():
-    return [{"id": "1", "type": "Email Sent", "donor": "Sample Donor", "date": "2024-01-01", "details": "Follow-up email sent"}]
+    return [
+        {
+            "Date": "2024-01-15",
+            "Organization Name": "HDFC Bank CSR",
+            "Interaction Type": "Email",
+            "Team Member": "gautam.gauri@dikshafoundation.org",
+            "Summary/Notes": "Sent partnership proposal for education technology initiatives",
+            "Next Steps": "Follow up on proposal response",
+            "Follow-up Date": "2024-01-22",
+            "Attachments": "proposal_document.pdf"
+        },
+        {
+            "Date": "2024-01-14",
+            "Organization Name": "Asha for Education – Silicon Valley",
+            "Interaction Type": "Phone Call",
+            "Team Member": "nisha.kumari@dikshafoundation.org",
+            "Summary/Notes": "Discussed rural education program funding opportunities",
+            "Next Steps": "Share detailed budget & M&E plan",
+            "Follow-up Date": "2024-01-21",
+            "Attachments": ""
+        }
+    ]
 
 # Import with multiple fallback strategies
 get_activity_log = fallback_get_activity_log
@@ -94,14 +115,14 @@ def main():
     
     with col2:
         activity_type = st.selectbox(
-            "Activity Type:",
-            ["All", "Email", "Call", "Meeting", "Donation", "Follow-up", "Note"]
+            "Interaction Type:",
+            ["All", "Email", "Phone Call", "Meeting", "Proposal", "Follow-up"]
         )
     
     with col3:
         donor_filter = st.selectbox(
-            "Donor:",
-            ["All", "ABC Corporation", "XYZ Foundation", "Tech Startup Inc", "Local Business LLC"]
+            "Organization:",
+            ["All", "HDFC Bank CSR", "Asha for Education – Silicon Valley", "TechCorp Industries", "EduFoundation Trust"]
         )
     
     with col4:
@@ -118,19 +139,34 @@ def main():
     
     st.markdown("---")
     
+    # Get activity data for metrics
+    activity_data = get_activity_log()
+    
+    # Calculate metrics from real data
+    if activity_data and len(activity_data) > 0:
+        total_activities = len(activity_data)
+        emails_sent = len([a for a in activity_data if a.get('Interaction Type', '').lower() in ['email', 'emails']])
+        calls_made = len([a for a in activity_data if 'call' in a.get('Interaction Type', '').lower()])
+        meetings_held = len([a for a in activity_data if 'meeting' in a.get('Interaction Type', '').lower()])
+    else:
+        total_activities = 0
+        emails_sent = 0
+        calls_made = 0
+        meetings_held = 0
+    
     # Activity summary
     st.subheader("📊 Activity Summary")
     
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.metric("Total Activities", "47", "12")
+        st.metric("Total Activities", total_activities)
     with col2:
-        st.metric("Emails Sent", "23", "5")
+        st.metric("Emails Sent", emails_sent)
     with col3:
-        st.metric("Calls Made", "15", "3")
+        st.metric("Calls Made", calls_made)
     with col4:
-        st.metric("Meetings Held", "9", "2")
+        st.metric("Meetings Held", meetings_held)
     
     st.markdown("---")
     
@@ -138,69 +174,32 @@ def main():
     st.subheader("📋 Activity Log")
     
     try:
-        # Get activity data (this would connect to your backend)
-        activity_data = get_activity_log()
-        
-        if activity_data:
-            df = pd.DataFrame(activity_data)
+        # Get activity data (already loaded above for metrics)
+        if activity_data and len(activity_data) > 0:
+            # Apply filters
+            filtered_data = activity_data.copy()
+            
+            # Interaction type filter
+            if activity_type != "All":
+                filtered_data = [a for a in filtered_data if a.get('Interaction Type') == activity_type]
+            
+            # Organization filter
+            if donor_filter != "All":
+                filtered_data = [a for a in filtered_data if a.get('Organization Name') == donor_filter]
+            
+            # Display filtered data
+            if filtered_data:
+                display_interaction_log(filtered_data)
+                
+                # Show filter summary
+                if activity_type != "All" or donor_filter != "All":
+                    st.info(f"📊 Showing {len(filtered_data)} of {len(activity_data)} interactions")
+            else:
+                st.info("No interactions match the selected filters.")
         else:
-            # Sample data for demonstration
-            activity_data = {
-                'Date': [
-                    '2024-01-15 14:30',
-                    '2024-01-15 10:15',
-                    '2024-01-14 16:45',
-                    '2024-01-14 09:30',
-                    '2024-01-13 15:20',
-                    '2024-01-13 11:00',
-                    '2024-01-12 14:15',
-                    '2024-01-12 10:30'
-                ],
-                'Activity': [
-                    'Email sent',
-                    'Phone call',
-                    'Meeting held',
-                    'Email sent',
-                    'Follow-up call',
-                    'Donation received',
-                    'Email sent',
-                    'Initial outreach'
-                ],
-                'Donor': [
-                    'ABC Corporation',
-                    'XYZ Foundation',
-                    'Tech Startup Inc',
-                    'Local Business LLC',
-                    'ABC Corporation',
-                    'XYZ Foundation',
-                    'Tech Startup Inc',
-                    'Local Business LLC'
-                ],
-                'Details': [
-                    'Sent partnership proposal',
-                    'Discussed funding opportunities',
-                    'In-person meeting at their office',
-                    'Thank you email for previous donation',
-                    'Follow-up on proposal sent last week',
-                    '$25,000 donation received',
-                    'Event invitation sent',
-                    'Initial contact via LinkedIn'
-                ],
-                'Status': [
-                    'Completed',
-                    'Completed',
-                    'Completed',
-                    'Completed',
-                    'Completed',
-                    'Completed',
-                    'Completed',
-                    'Completed'
-                ]
-            }
-            df = pd.DataFrame(activity_data)
-        
-        # Display the dataframe
-        st.dataframe(df, use_container_width=True)
+            # Fallback to sample data with notice
+            st.warning("⚠️ Unable to load live interaction data. Showing sample data.")
+            display_sample_activity_data()
         
     except Exception as e:
         st.error(f"Error loading activity data: {str(e)}")
@@ -302,6 +301,67 @@ def main():
         if st.button("🔄 Sync with Backend"):
             st.info("Syncing with backend...")
             st.success("Sync completed!")
+
+def display_interaction_log(interactions):
+    """Display interaction log data in a user-friendly format"""
+    for i, interaction in enumerate(interactions):
+        with st.expander(f"📅 {interaction.get('Date', 'No Date')} - {interaction.get('Organization Name', 'Unknown Organization')}", expanded=False):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**📋 Interaction Details**")
+                st.write(f"**Type:** {interaction.get('Interaction Type', 'N/A')}")
+                st.write(f"**Organization:** {interaction.get('Organization Name', 'N/A')}")
+                st.write(f"**Team Member:** {interaction.get('Team Member', 'N/A')}")
+                st.write(f"**Date:** {interaction.get('Date', 'N/A')}")
+                
+            with col2:
+                st.markdown("**📝 Summary & Next Steps**")
+                st.write(f"**Summary:** {interaction.get('Summary/Notes', 'N/A')}")
+                st.write(f"**Next Steps:** {interaction.get('Next Steps', 'N/A')}")
+                st.write(f"**Follow-up Date:** {interaction.get('Follow-up Date', 'N/A')}")
+                
+                if interaction.get('Attachments'):
+                    st.write(f"**Attachments:** {interaction.get('Attachments', 'None')}")
+            
+            # Action buttons
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                if st.button("✏️ Edit", key=f"edit_{i}"):
+                    st.info("Edit functionality coming soon!")
+            with col2:
+                if st.button("📧 Follow-up", key=f"followup_{i}"):
+                    st.info("Follow-up functionality coming soon!")
+            with col3:
+                if st.button("📎 Add Attachment", key=f"attach_{i}"):
+                    st.info("Attachment functionality coming soon!")
+
+def display_sample_activity_data():
+    """Display sample activity data when API is unavailable"""
+    sample_data = [
+        {
+            "Date": "2024-01-15",
+            "Organization Name": "HDFC Bank CSR",
+            "Interaction Type": "Email",
+            "Team Member": "gautam.gauri@dikshafoundation.org",
+            "Summary/Notes": "Sent partnership proposal for education technology initiatives",
+            "Next Steps": "Follow up on proposal response",
+            "Follow-up Date": "2024-01-22",
+            "Attachments": "proposal_document.pdf"
+        },
+        {
+            "Date": "2024-01-14",
+            "Organization Name": "Asha for Education – Silicon Valley",
+            "Interaction Type": "Phone Call",
+            "Team Member": "nisha.kumari@dikshafoundation.org",
+            "Summary/Notes": "Discussed rural education program funding opportunities",
+            "Next Steps": "Share detailed budget & M&E plan",
+            "Follow-up Date": "2024-01-21",
+            "Attachments": ""
+        }
+    ]
+    
+    display_interaction_log(sample_data)
 
 if __name__ == "__main__":
     main()

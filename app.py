@@ -72,6 +72,31 @@ def get_pipeline():
             "error": str(e)
         }), 500
 
+@app.route('/api/activities', methods=['GET'])
+def get_activities():
+    """Get interaction log entries from Google Sheets"""
+    try:
+        if not sheets_db or not sheets_db.initialized:
+            return jsonify({
+                "success": False,
+                "error": "Google Sheets not connected"
+            }), 503
+        
+        # Get interaction log data from Google Sheets
+        interaction_log_data = sheets_db.get_interaction_log()
+        
+        return jsonify({
+            "success": True,
+            "data": interaction_log_data
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting activities: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
 @app.route('/api/donor/<donor_id>', methods=['GET'])
 def get_donor(donor_id):
     """Get specific donor information"""
