@@ -21,8 +21,10 @@ def get_allowed_users() -> List[str]:
             "admin@dikshafoundation.org",
             "gautamgauri@dikshafoundation.org",
             "gautam.gauri@dikshafoundation.org",
-            "tanya.pandey@dikshafoundation.org",
-            "nisha.kumari@dikshafoundation.org"
+            "nisha.kumari@dikshafoundation.org",
+            "neha.anand@dikshafoundation.org",
+            "nishant.kumar@dikshafoundation.org",
+            "shivam.mishra@dikshafoundation.org"
         ]
     
     return [email.strip() for email in allowed_users_str.split(",")]
