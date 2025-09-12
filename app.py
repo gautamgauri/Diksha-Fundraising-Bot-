@@ -17,14 +17,34 @@ logger = logging.getLogger(__name__)
 # Initialize Flask app
 app = Flask(__name__)
 
+@app.route('/', methods=['GET'])
+def root():
+    """Root endpoint"""
+    return jsonify({
+        "message": "Diksha Fundraising Backend API",
+        "status": "running",
+        "timestamp": datetime.now().isoformat()
+    })
+
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint for Railway"""
-    return jsonify({
-        "status": "healthy",
-        "service": "Diksha Fundraising Backend",
-        "timestamp": datetime.now().isoformat()
-    })
+    try:
+        # Basic health check - just return OK if Flask is running
+        return jsonify({
+            "status": "healthy",
+            "service": "Diksha Fundraising Backend",
+            "timestamp": datetime.now().isoformat(),
+            "backend_available": backend_manager is not None
+        })
+    except Exception as e:
+        # Even if there's an error, return a basic response
+        return jsonify({
+            "status": "degraded",
+            "service": "Diksha Fundraising Backend",
+            "timestamp": datetime.now().isoformat(),
+            "error": str(e)
+        }), 200
 
 # Import shared backend
 try:
@@ -2210,4 +2230,6 @@ if __name__ == '__main__':
     
     print("="*60)
     
-    app.run(host='0.0.0.0', port=port, debug=True)
+    # Get port from environment variable (Railway requirement)
+    port = int(os.getenv('PORT', port))
+    app.run(host='0.0.0.0', port=port, debug=False)
