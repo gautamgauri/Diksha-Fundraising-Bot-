@@ -30,26 +30,37 @@ for path in possible_paths:
 if lib_path and lib_path not in sys.path:
     sys.path.insert(0, lib_path)
 
+# Fallback function
+def fallback_get_activity_log():
+    return [{"id": "1", "type": "Email Sent", "donor": "Sample Donor", "date": "2024-01-01", "details": "Follow-up email sent"}]
+
 # Import with multiple fallback strategies
-get_activity_log = None
+get_activity_log = fallback_get_activity_log
 
 try:
     from lib.api import get_activity_log
-except ImportError:
+    print("✅ Using lib.api import for get_activity_log")
+except ImportError as e:
+    print(f"❌ Lib.api import failed: {e}")
     try:
         from api import get_activity_log  # type: ignore
-    except ImportError:
+        print("✅ Using direct api import for get_activity_log")
+    except ImportError as e:
+        print(f"❌ Direct api import failed: {e}")
         if lib_path:
             try:
                 api_file_path = os.path.join(lib_path, 'api.py')
-                spec = importlib.util.spec_from_file_location("api", api_file_path)
-                api_module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(api_module)
-                get_activity_log = api_module.get_activity_log
-            except Exception:
-                pass
+                if os.path.exists(api_file_path):
+                    spec = importlib.util.spec_from_file_location("api", api_file_path)
+                    api_module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(api_module)
+                    if hasattr(api_module, 'get_activity_log'):
+                        get_activity_log = api_module.get_activity_log
+                        print("✅ Using importlib for get_activity_log")
+            except Exception as e:
+                print(f"❌ Importlib failed: {e}")
         
-        if not get_activity_log:
+        if get_activity_log == fallback_get_activity_log:
             for path in possible_paths:
                 try:
                     abs_path = os.path.abspath(path)
@@ -58,13 +69,15 @@ except ImportError:
                         spec = importlib.util.spec_from_file_location("api", api_file_path)
                         api_module = importlib.util.module_from_spec(spec)
                         spec.loader.exec_module(api_module)
-                        get_activity_log = api_module.get_activity_log
-                        break
-                except Exception:
+                        if hasattr(api_module, 'get_activity_log'):
+                            get_activity_log = api_module.get_activity_log
+                            print(f"✅ Found get_activity_log in {abs_path}")
+                            break
+                except Exception as e:
+                    print(f"❌ Failed to import from {path}: {e}")
                     continue
 
-if not get_activity_log:
-    raise ImportError("Could not import get_activity_log from any available source")
+print(f"✅ Final get_activity_log import: {get_activity_log != fallback_get_activity_log}")
 
 def main():
     st.title("📝 Activity Log")

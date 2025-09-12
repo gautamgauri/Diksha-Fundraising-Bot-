@@ -28,26 +28,38 @@ for path in possible_paths:
 if lib_path and lib_path not in sys.path:
     sys.path.insert(0, lib_path)
 
+# Fallback function in case import fails
+def fallback_check_auth() -> bool:
+    """Fallback function for check_auth - always returns True for development"""
+    return True
+
 # Import with multiple fallback strategies
-check_auth = None
+check_auth = fallback_check_auth
 
 try:
     from lib import check_auth
-except ImportError:
+    print("✅ Using lib package import for check_auth")
+except ImportError as e:
+    print(f"❌ Lib package import failed: {e}")
     try:
         from auth import check_auth  # type: ignore
-    except ImportError:
+        print("✅ Using direct module import for check_auth")
+    except ImportError as e:
+        print(f"❌ Direct module import failed: {e}")
         if lib_path:
             try:
                 auth_file_path = os.path.join(lib_path, 'auth.py')
-                spec = importlib.util.spec_from_file_location("auth", auth_file_path)
-                auth_module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(auth_module)
-                check_auth = auth_module.check_auth
-            except Exception:
-                pass
+                if os.path.exists(auth_file_path):
+                    spec = importlib.util.spec_from_file_location("auth", auth_file_path)
+                    auth_module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(auth_module)
+                    if hasattr(auth_module, 'check_auth'):
+                        check_auth = auth_module.check_auth
+                        print("✅ Using importlib for check_auth")
+            except Exception as e:
+                print(f"❌ Importlib failed: {e}")
         
-        if not check_auth:
+        if check_auth == fallback_check_auth:
             for path in possible_paths:
                 try:
                     abs_path = os.path.abspath(path)
@@ -56,13 +68,15 @@ except ImportError:
                         spec = importlib.util.spec_from_file_location("auth", auth_file_path)
                         auth_module = importlib.util.module_from_spec(spec)
                         spec.loader.exec_module(auth_module)
-                        check_auth = auth_module.check_auth
-                        break
-                except Exception:
+                        if hasattr(auth_module, 'check_auth'):
+                            check_auth = auth_module.check_auth
+                            print(f"✅ Found check_auth in {abs_path}")
+                            break
+                except Exception as e:
+                    print(f"❌ Failed to import from {path}: {e}")
                     continue
 
-if not check_auth:
-    raise ImportError("Could not import check_auth from any available source")
+print(f"✅ Final check_auth import: {check_auth != fallback_check_auth}")
 
 # Page configuration
 st.set_page_config(

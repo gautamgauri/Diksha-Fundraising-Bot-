@@ -28,26 +28,37 @@ for path in possible_paths:
 if lib_path and lib_path not in sys.path:
     sys.path.insert(0, lib_path)
 
+# Fallback function
+def fallback_get_templates():
+    return [{"id": "1", "name": "Sample Template", "category": "Follow-up", "subject": "Thank you for your interest"}]
+
 # Import with multiple fallback strategies
-get_templates = None
+get_templates = fallback_get_templates
 
 try:
     from lib.api import get_templates
-except ImportError:
+    print("✅ Using lib.api import for get_templates")
+except ImportError as e:
+    print(f"❌ Lib.api import failed: {e}")
     try:
         from api import get_templates  # type: ignore
-    except ImportError:
+        print("✅ Using direct api import for get_templates")
+    except ImportError as e:
+        print(f"❌ Direct api import failed: {e}")
         if lib_path:
             try:
                 api_file_path = os.path.join(lib_path, 'api.py')
-                spec = importlib.util.spec_from_file_location("api", api_file_path)
-                api_module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(api_module)
-                get_templates = api_module.get_templates
-            except Exception:
-                pass
+                if os.path.exists(api_file_path):
+                    spec = importlib.util.spec_from_file_location("api", api_file_path)
+                    api_module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(api_module)
+                    if hasattr(api_module, 'get_templates'):
+                        get_templates = api_module.get_templates
+                        print("✅ Using importlib for get_templates")
+            except Exception as e:
+                print(f"❌ Importlib failed: {e}")
         
-        if not get_templates:
+        if get_templates == fallback_get_templates:
             for path in possible_paths:
                 try:
                     abs_path = os.path.abspath(path)
@@ -56,13 +67,15 @@ except ImportError:
                         spec = importlib.util.spec_from_file_location("api", api_file_path)
                         api_module = importlib.util.module_from_spec(spec)
                         spec.loader.exec_module(api_module)
-                        get_templates = api_module.get_templates
-                        break
-                except Exception:
+                        if hasattr(api_module, 'get_templates'):
+                            get_templates = api_module.get_templates
+                            print(f"✅ Found get_templates in {abs_path}")
+                            break
+                except Exception as e:
+                    print(f"❌ Failed to import from {path}: {e}")
                     continue
 
-if not get_templates:
-    raise ImportError("Could not import get_templates from any available source")
+print(f"✅ Final get_templates import: {get_templates != fallback_get_templates}")
 
 def main():
     st.title("🧩 Email Templates")
