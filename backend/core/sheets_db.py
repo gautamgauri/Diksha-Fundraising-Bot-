@@ -971,3 +971,65 @@ class SheetsDB:
         except Exception as e:
             logger.error(f"❌ Error getting Drive summary: {e}")
             return {}
+    
+    def add_organization(self, org_data: Dict[str, Any]) -> bool:
+        """
+        Add a new organization to the pipeline sheet
+        
+        Args:
+            org_data: Dictionary containing organization information
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if not self.initialized or not self.sheets_service:
+            logger.error("❌ Sheets service not available")
+            return False
+        
+        try:
+            # Prepare the row data in the correct order based on headers
+            row_data = [
+                org_data.get("organization_name", ""),
+                org_data.get("contact_person", ""),
+                org_data.get("email", ""),
+                org_data.get("phone", ""),
+                org_data.get("current_stage", "Initial Contact"),
+                org_data.get("previous_stage", ""),
+                org_data.get("sector_tags", ""),
+                org_data.get("geography", ""),
+                org_data.get("alignment_score", 0),
+                org_data.get("priority", "Medium"),
+                org_data.get("assigned_to", ""),
+                org_data.get("estimated_grant_size", ""),
+                org_data.get("source", "Manual Entry")
+            ]
+            
+            # Find the next empty row
+            range_name = f"{self.sheet_name}!A:A"
+            result = self.sheets_service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id,
+                range=range_name
+            ).execute()
+            
+            values = result.get('values', [])
+            next_row = len(values) + 1
+            
+            # Insert the new row
+            range_name = f"{self.sheet_name}!A{next_row}:M{next_row}"
+            body = {
+                'values': [row_data]
+            }
+            
+            result = self.sheets_service.spreadsheets().values().update(
+                spreadsheetId=self.spreadsheet_id,
+                range=range_name,
+                valueInputOption='RAW',
+                body=body
+            ).execute()
+            
+            logger.info(f"✅ Successfully added organization '{org_data.get('organization_name')}' to row {next_row}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Error adding organization: {e}")
+            return False

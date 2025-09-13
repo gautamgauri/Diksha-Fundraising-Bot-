@@ -340,6 +340,20 @@ def get_data_quality_stats() -> Optional[Dict]:
     """Get data quality statistics"""
     return make_api_request("/debug/data-quality")
 
+def get_contacts() -> Optional[List[Dict]]:
+    """Get all email contacts"""
+    response = make_api_request("/api/contacts")
+    if response and response.get("success"):
+        return response.get("contacts", [])
+    return None
+
+def add_contact(contact_data: Dict) -> Optional[Dict]:
+    """Add a new email contact"""
+    response = make_api_request("/api/contacts", method="POST", data=contact_data)
+    if response and response.get("success"):
+        return response
+    return None
+
 def test_connection_robustness() -> Dict[str, Any]:
     """Test connection robustness with multiple scenarios"""
     results = {

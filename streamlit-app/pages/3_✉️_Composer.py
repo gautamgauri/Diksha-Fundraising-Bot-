@@ -40,14 +40,26 @@ def fallback_send_email(recipient, subject, body):
 # Import with multiple fallback strategies
 get_donors = fallback_get_donors
 send_email = fallback_send_email
+get_contacts = None
+add_contact = None
+
+def fallback_get_contacts():
+    return [{"id": "1", "organization_name": "Sample Donor", "contact_email": "donor@example.com"}]
+
+def fallback_add_contact(contact_data):
+    print(f"Fallback: Would add contact {contact_data}")
+    return {"success": True, "message": "Contact added (fallback)"}
+
+get_contacts = fallback_get_contacts
+add_contact = fallback_add_contact
 
 try:
-    from lib.api import get_donors, send_email
+    from lib.api import get_donors, send_email, get_contacts, add_contact
     print("✅ Using lib.api imports")
 except ImportError as e:
     print(f"❌ Lib.api import failed: {e}")
     try:
-        from api import get_donors, send_email  # type: ignore
+        from api import get_donors, send_email, get_contacts, add_contact  # type: ignore
         print("✅ Using direct api imports")
     except ImportError as e:
         print(f"❌ Direct api import failed: {e}")
@@ -62,6 +74,10 @@ except ImportError as e:
                         get_donors = api_module.get_donors
                     if hasattr(api_module, 'send_email'):
                         send_email = api_module.send_email
+                    if hasattr(api_module, 'get_contacts'):
+                        get_contacts = api_module.get_contacts
+                    if hasattr(api_module, 'add_contact'):
+                        add_contact = api_module.add_contact
                     print("✅ Using importlib for api module")
             except Exception as e:
                 print(f"❌ Importlib failed: {e}")
@@ -79,6 +95,10 @@ except ImportError as e:
                             get_donors = api_module.get_donors
                         if hasattr(api_module, 'send_email'):
                             send_email = api_module.send_email
+                        if hasattr(api_module, 'get_contacts'):
+                            get_contacts = api_module.get_contacts
+                        if hasattr(api_module, 'add_contact'):
+                            add_contact = api_module.add_contact
                         print(f"✅ Found api functions in {abs_path}")
                         break
                 except Exception as e:
@@ -99,24 +119,119 @@ def main():
         
         # Recipient selection
         try:
-            donors = get_donors()
-            if donors:
-                donor_options = [f"{donor.get('name', 'Unknown')} ({donor.get('email', 'No email')})" for donor in donors]
+            # Try to get contacts first, fallback to donors
+            contacts = get_contacts() if get_contacts else None
+            if contacts:
+                # Use contacts API
+                donor_options = []
+                for contact in contacts:
+                    org_name = contact.get('organization_name', 'Unknown Organization')
+                    contact_email = contact.get('contact_email', 'No email')
+                    contact_person = contact.get('contact_person', '')
+                    
+                    # Format: "Organization Name (Contact Person) - email@domain.com"
+                    if contact_person and contact_person != org_name:
+                        display_name = f"{org_name} ({contact_person}) - {contact_email}"
+                    else:
+                        display_name = f"{org_name} - {contact_email}"
+                    
+                    donor_options.append(display_name)
             else:
-                donor_options = [
-                    "ABC Corporation (john@abccorp.com)",
-                    "XYZ Foundation (contact@xyzfoundation.org)",
-                    "Tech Startup Inc (info@techstartup.com)"
-                ]
+                # Fallback to donors API
+                donors = get_donors()
+                if donors:
+                    donor_options = []
+                    for donor in donors:
+                        org_name = donor.get('organization_name', 'Unknown Organization')
+                        contact_email = donor.get('contact_email', 'No email')
+                        contact_person = donor.get('contact_person', '')
+                        
+                        # Format: "Organization Name (Contact Person) - email@domain.com"
+                        if contact_person and contact_person != org_name:
+                            display_name = f"{org_name} ({contact_person}) - {contact_email}"
+                        else:
+                            display_name = f"{org_name} - {contact_email}"
+                        
+                        donor_options.append(display_name)
+                else:
+                    donor_options = [
+                        "ABC Corporation (john@abccorp.com)",
+                        "XYZ Foundation (contact@xyzfoundation.org)",
+                        "Tech Startup Inc (info@techstartup.com)"
+                    ]
         except Exception as e:
-            st.error(f"Error loading donors: {str(e)}")
+            st.error(f"Error loading contacts: {str(e)}")
             donor_options = [
                 "ABC Corporation (john@abccorp.com)",
                 "XYZ Foundation (contact@xyzfoundation.org)",
                 "Tech Startup Inc (info@techstartup.com)"
             ]
         
-        recipient = st.selectbox("To:", donor_options)
+        # Add new email option
+        col_recipient, col_add = st.columns([3, 1])
+        
+        with col_recipient:
+            recipient = st.selectbox("To:", donor_options)
+        
+        with col_add:
+            if st.button("➕ Add New", help="Add a new email recipient"):
+                st.session_state.show_add_email = True
+        
+        # Add new email form
+        if st.session_state.get('show_add_email', False):
+            st.markdown("**➕ Add New Email Recipient**")
+            
+            col_name, col_email = st.columns(2)
+            
+            with col_name:
+                new_org_name = st.text_input("Organization Name:", placeholder="e.g., ABC Corporation")
+                new_contact_person = st.text_input("Contact Person:", placeholder="e.g., John Smith")
+            
+            with col_email:
+                new_email = st.text_input("Email Address:", placeholder="e.g., john@abccorp.com")
+                new_role = st.text_input("Role/Title:", placeholder="e.g., CSR Manager")
+            
+            col_save, col_cancel = st.columns(2)
+            
+            with col_save:
+                if st.button("💾 Save New Contact", type="primary"):
+                    if new_org_name and new_email:
+                        try:
+                            # Prepare contact data
+                            contact_data = {
+                                "organization_name": new_org_name,
+                                "contact_person": new_contact_person,
+                                "contact_email": new_email,
+                                "contact_role": new_role,
+                                "current_stage": "Initial Contact",
+                                "sector_tags": "",
+                                "assigned_to": "",
+                                "notes": "Added via Email Composer"
+                            }
+                            
+                            # Save to backend
+                            if add_contact and add_contact != fallback_add_contact:
+                                result = add_contact(contact_data)
+                                if result and result.get("success"):
+                                    st.success(f"✅ Contact added successfully: {new_org_name}")
+                                    st.session_state.show_add_email = False
+                                    st.rerun()
+                                else:
+                                    st.error(f"❌ Failed to add contact: {result.get('error', 'Unknown error')}")
+                            else:
+                                # Fallback mode
+                                st.warning("⚠️ Backend not available - contact saved locally only")
+                                st.session_state.show_add_email = False
+                                st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ Error adding contact: {str(e)}")
+                    else:
+                        st.error("Please fill in Organization Name and Email Address")
+            
+            with col_cancel:
+                if st.button("❌ Cancel"):
+                    st.session_state.show_add_email = False
+                    st.rerun()
         
         # Email type selection
         email_type = st.selectbox(

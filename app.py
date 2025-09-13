@@ -2009,6 +2009,103 @@ def debug_data_quality():
             "mode": "slack-bolt"
         }), 500
 
+# Add endpoint for managing email contacts
+@app.route('/api/contacts', methods=['GET', 'POST'])
+def manage_contacts():
+    """Manage email contacts - get existing or add new ones"""
+    try:
+        if request.method == 'GET':
+            # Get all contacts from the pipeline
+            if not donor_service:
+                return jsonify({
+                    "success": False,
+                    "error": "Donor service not available"
+                }), 503
+            
+            donors = donor_service.get_all_donors()
+            contacts = []
+            
+            for donor in donors:
+                contact = {
+                    "id": donor.get("id"),
+                    "organization_name": donor.get("organization_name"),
+                    "contact_person": donor.get("contact_person"),
+                    "contact_email": donor.get("contact_email"),
+                    "contact_role": donor.get("contact_role"),
+                    "current_stage": donor.get("current_stage")
+                }
+                contacts.append(contact)
+            
+            return jsonify({
+                "success": True,
+                "contacts": contacts,
+                "count": len(contacts)
+            })
+        
+        elif request.method == 'POST':
+            # Add new contact
+            data = request.get_json()
+            if not data:
+                return jsonify({
+                    "success": False,
+                    "error": "No data provided"
+                }), 400
+            
+            required_fields = ['organization_name', 'contact_email']
+            for field in required_fields:
+                if not data.get(field):
+                    return jsonify({
+                        "success": False,
+                        "error": f"Missing required field: {field}"
+                    }), 400
+            
+            # Create new contact data
+            new_contact = {
+                "organization_name": data.get("organization_name"),
+                "contact_person": data.get("contact_person", ""),
+                "email": data.get("contact_email"),
+                "contact_role": data.get("contact_role", ""),
+                "current_stage": data.get("current_stage", "Initial Contact"),
+                "sector_tags": data.get("sector_tags", ""),
+                "assigned_to": data.get("assigned_to", ""),
+                "notes": data.get("notes", "")
+            }
+            
+            # Add to Google Sheets (this would need to be implemented in sheets_db)
+            if sheets_db and sheets_db.initialized:
+                try:
+                    # This is a placeholder - you'd need to implement add_organization in sheets_db
+                    result = sheets_db.add_organization(new_contact)
+                    if result:
+                        return jsonify({
+                            "success": True,
+                            "message": "Contact added successfully",
+                            "contact": new_contact
+                        })
+                    else:
+                        return jsonify({
+                            "success": False,
+                            "error": "Failed to add contact to database"
+                        }), 500
+                except Exception as e:
+                    logger.error(f"Error adding contact to sheets: {e}")
+                    return jsonify({
+                        "success": False,
+                        "error": f"Database error: {str(e)}"
+                    }), 500
+            else:
+                return jsonify({
+                    "success": False,
+                    "error": "Database not available"
+                }), 503
+        
+    except Exception as e:
+        logger.error(f"Contact management error: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
 # Add debug endpoint for template management
 @app.route('/debug/template-management', methods=['GET', 'POST'])
 def debug_template_management():
