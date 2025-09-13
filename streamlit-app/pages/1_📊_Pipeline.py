@@ -1263,8 +1263,8 @@ def show_pipeline_analytics():
         st.info(f"📊 **Pipeline Health:** {active_count} active prospects out of {total_prospects} total")
         st.info(f"💰 **Financial Outlook:** ${weighted_value:,.0f} in probability-weighted pipeline value")
         st.info(f"🎯 **Success Rate:** {win_rate:.1f}% win rate from {total_closed} closed deals")
-        
-        else:
+    
+    else:
         st.warning("⚠️ **No Pipeline Data Available**")
         st.info("Connect to your Google Sheets or add some prospects to see analytics.")
         
