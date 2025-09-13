@@ -1131,13 +1131,13 @@ def show_pipeline_analytics():
     st.markdown("### 📈 Pipeline Analytics Dashboard")
     st.markdown("Comprehensive insights into your fundraising pipeline performance.")
     
-        if pipeline_data and len(pipeline_data) > 0:
+    if pipeline_data and len(pipeline_data) > 0:
         # Calculate comprehensive analytics
-            total_prospects = len(pipeline_data)
-            stages = [d.get('current_stage', 'Unknown') for d in pipeline_data]
-            stage_counts = {}
-            for stage in stages:
-                stage_counts[stage] = stage_counts.get(stage, 0) + 1
+        total_prospects = len(pipeline_data)
+        stages = [d.get('current_stage', 'Unknown') for d in pipeline_data]
+        stage_counts = {}
+        for stage in stages:
+            stage_counts[stage] = stage_counts.get(stage, 0) + 1
             
         # Calculate financial metrics
         expected_amounts = [d.get('expected_amount', 0) for d in pipeline_data if d.get('expected_amount')]
