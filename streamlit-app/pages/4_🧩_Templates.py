@@ -104,28 +104,43 @@ def main():
     
     try:
         # Get templates from backend
-        templates = get_templates()
+        templates_response = get_templates()
         
-        if templates:
-            for template in templates:
-                with st.expander(f"📧 {template.get('name', 'Unnamed Template')}"):
-                    st.write(f"**Category:** {template.get('category', 'General')}")
-                    st.write(f"**Description:** {template.get('description', 'No description available')}")
-                    st.write(f"**Usage Count:** {template.get('usage_count', 0)}")
-                    
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        if st.button(f"✏️ Edit", key=f"edit_{template.get('id', '')}"):
-                            st.info("Edit template functionality would open here")
-                    with col2:
-                        if st.button(f"📋 Use Template", key=f"use_{template.get('id', '')}"):
-                            st.info("Template would be loaded in Email Composer")
-                    with col3:
-                        if st.button(f"📊 Analytics", key=f"analytics_{template.get('id', '')}"):
-                            st.info("Template analytics would be displayed here")
+        if templates_response and isinstance(templates_response, dict):
+            # Extract templates from the API response
+            templates = templates_response.get('templates', [])
+            
+            if templates and isinstance(templates, list):
+                for template in templates:
+                    if isinstance(template, dict):
+                        with st.expander(f"📧 {template.get('name', 'Unnamed Template')}"):
+                            st.write(f"**Category:** {template.get('category', 'General')}")
+                            st.write(f"**Description:** {template.get('description', 'No description available')}")
+                            st.write(f"**Usage Count:** {template.get('usage_count', 0)}")
+                            
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                if st.button(f"✏️ Edit", key=f"edit_{template.get('id', '')}"):
+                                    st.info("Edit template functionality would open here")
+                            with col2:
+                                if st.button(f"📋 Use Template", key=f"use_{template.get('id', '')}"):
+                                    st.info("Template would be loaded in Email Composer")
+                            with col3:
+                                if st.button(f"📊 Analytics", key=f"analytics_{template.get('id', '')}"):
+                                    st.info("Template analytics would be displayed here")
+                    else:
+                        st.warning(f"⚠️ Invalid template format: {template}")
+            else:
+                st.info("📝 No templates found in the response")
         else:
-            # Sample templates for demonstration
-            sample_templates = [
+            st.warning("⚠️ Invalid response format from templates API")
+            
+    except Exception as e:
+        st.error(f"❌ Error loading templates: {str(e)}")
+        st.info("Showing sample templates instead")
+        
+        # Sample templates for demonstration
+        sample_templates = [
                 {
                     "name": "Initial Partnership Outreach",
                     "category": "Initial Outreach",
