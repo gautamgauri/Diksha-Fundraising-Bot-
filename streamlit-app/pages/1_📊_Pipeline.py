@@ -1145,8 +1145,8 @@ def show_pipeline_analytics():
         avg_deal_size = total_pipeline_value / len(expected_amounts) if expected_amounts else 0
         
         # Calculate probability metrics
-            probabilities = [d.get('probability', 0) for d in pipeline_data if d.get('probability')]
-            avg_probability = sum(probabilities) / len(probabilities) if probabilities else 0
+        probabilities = [d.get('probability', 0) for d in pipeline_data if d.get('probability')]
+        avg_probability = sum(probabilities) / len(probabilities) if probabilities else 0
         weighted_value = sum([d.get('expected_amount', 0) * (d.get('probability', 0) / 100) for d in pipeline_data])
         
         # Calculate stage-based metrics
