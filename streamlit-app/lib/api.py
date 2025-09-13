@@ -11,12 +11,12 @@ from typing import List, Dict, Any, Optional
 # Get API base URL from environment
 API_BASE = os.getenv("API_BASE", "http://localhost:5000")
 
-# For Railway deployment, try to detect backend URL
+# For Railway deployment, use the Flask backend URL
 if not API_BASE or API_BASE == "http://localhost:5000":
-    # Try to get backend URL from Railway environment
-    backend_url = os.getenv("RAILWAY_PUBLIC_DOMAIN")
-    if backend_url:
-        API_BASE = f"https://{backend_url}"
+    # Use the Flask backend URL from Railway
+    flask_backend_url = os.getenv("FLASK_BACKEND_URL", "https://web-production-0d249.up.railway.app")
+    if flask_backend_url:
+        API_BASE = flask_backend_url
     else:
         # Fallback to localhost for development
         API_BASE = "http://localhost:5000"
@@ -89,6 +89,8 @@ def get_data_directly_from_sheets(endpoint: str) -> Optional[Dict]:
             data = sheets_integration.get_proposals()
         elif endpoint == "/api/alerts":
             data = sheets_integration.get_alerts()
+        elif endpoint == "/api/templates":
+            data = sheets_integration.get_templates()
         else:
             return None
         
@@ -100,22 +102,24 @@ def get_data_directly_from_sheets(endpoint: str) -> Optional[Dict]:
 
 def get_donors() -> Optional[List[Dict]]:
     """Get list of all donors"""
-    result = make_api_request("/api/donors")
-    if result and isinstance(result, dict) and result.get("success"):
+    result = make_api_request("/api/pipeline")
+    if result and isinstance(result, dict):
+        # Flask backend returns data directly in 'data' field
         return result.get("data", [])
     return result
 
 def get_donor_profile(donor_id: str) -> Optional[Dict]:
     """Get detailed donor profile"""
-    result = make_api_request(f"/api/donors/{donor_id}")
-    if result and isinstance(result, dict) and result.get("success"):
+    result = make_api_request(f"/api/donor/{donor_id}")
+    if result and isinstance(result, dict):
         return result.get("data")
     return result
 
 def get_pipeline_data() -> Optional[List[Dict]]:
     """Get fundraising pipeline data"""
     result = make_api_request("/api/pipeline")
-    if result and isinstance(result, dict) and result.get("success"):
+    if result and isinstance(result, dict):
+        # Flask backend returns data directly in 'data' field
         return result.get("data", [])
     return result
 
@@ -127,9 +131,12 @@ def get_cached_pipeline_data() -> Optional[List[Dict]]:
         return result.get("data", [])
     return result
 
-def get_templates() -> Optional[List[Dict]]:
+def get_templates() -> Optional[Dict]:
     """Get email templates"""
-    return make_api_request("/api/templates")
+    result = make_api_request("/debug/templates")
+    if result and isinstance(result, dict):
+        return result
+    return result
 
 def get_activity_log() -> Optional[List[Dict]]:
     """Get activity log entries"""
@@ -249,3 +256,30 @@ def get_cached_pipeline_data():
 def get_cached_templates():
     """Get cached templates"""
     return get_templates()
+
+def test_api_connection() -> Dict[str, Any]:
+    """Test API connection and return status"""
+    try:
+        # Test health endpoint
+        health_response = make_api_request("/health")
+        if health_response:
+            return {
+                "status": "connected",
+                "api_base": API_BASE,
+                "health_check": "passed",
+                "backend_type": "flask"
+            }
+        else:
+            return {
+                "status": "disconnected",
+                "api_base": API_BASE,
+                "health_check": "failed",
+                "backend_type": "unknown"
+            }
+    except Exception as e:
+        return {
+            "status": "error",
+            "api_base": API_BASE,
+            "error": str(e),
+            "backend_type": "unknown"
+        }
