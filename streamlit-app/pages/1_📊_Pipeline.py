@@ -716,10 +716,10 @@ def add_new_prospect():
             col1, col2 = st.columns(2)
             
             with col1:
-            expected_amount = st.number_input(
-                "Expected Amount ($)",
-                min_value=0,
-                step=1000,
+                expected_amount = st.number_input(
+                    "Expected Amount ($)",
+                    min_value=0,
+                    step=1000,
                     format="%d",
                     help="Estimated donation amount in USD"
                 )
