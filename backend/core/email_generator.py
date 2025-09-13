@@ -449,24 +449,98 @@ class EmailGenerator:
     def get_template_content(self, template_name: str) -> Optional[str]:
         """Get the actual content of a specific template"""
         try:
-            # First check if we have the template content loaded
+            # First try to get from Drive directly
+            if self.drive_service:
+                logger.info(f"Attempting to retrieve template '{template_name}' from Google Drive")
+                drive_templates = self._get_templates_from_drive()
+                if drive_templates.get(template_name):
+                    logger.info(f"✅ Found template '{template_name}' in Google Drive")
+                    return drive_templates.get(template_name)
+                else:
+                    logger.info(f"❌ Template '{template_name}' not found in Google Drive")
+            
+            # Fallback: Check if we have the template content loaded
             templates = self.get_available_templates()
             
             # If templates is a dict of content (from Drive), return the content
             if isinstance(templates.get(template_name), str) and len(templates[template_name]) > 50:
                 # This looks like actual content, not just a description
+                logger.info(f"✅ Using cached template content for '{template_name}'")
                 return templates[template_name]
             
-            # If not, try to get from Drive directly
-            if self.drive_service:
-                drive_templates = self._get_templates_from_drive()
-                return drive_templates.get(template_name)
+            # Final fallback: Check local templates
+            local_template = self._get_local_template(template_name)
+            if local_template:
+                logger.info(f"✅ Using local template for '{template_name}'")
+                return local_template
             
+            logger.warning(f"❌ No template found for '{template_name}' in Drive, cache, or local files")
             return None
             
         except Exception as e:
             logger.error(f"Error getting template content for {template_name}: {e}")
             return None
+    
+    def _get_local_template(self, template_name: str) -> Optional[str]:
+        """Get template content from local files"""
+        try:
+            import os
+            template_path = os.path.join("templates", f"{template_name}_email.txt")
+            if os.path.exists(template_path):
+                with open(template_path, 'r', encoding='utf-8') as f:
+                    return f.read()
+            return None
+        except Exception as e:
+            logger.error(f"Error reading local template {template_name}: {e}")
+            return None
+    
+    def create_sample_template(self, template_name: str) -> str:
+        """Create a sample template for demonstration purposes"""
+        sample_templates = {
+            "intro": """Subject: Partnership Opportunity with Diksha Foundation
+
+Dear ${contact_person},
+
+I hope this message finds you well. I'm reaching out from Diksha Foundation to introduce our work and explore potential partnership opportunities.
+
+Diksha Foundation is a non-profit organization dedicated to empowering youth through digital literacy and technology education. We've been successfully training youth in Bihar for over 10 years, with a proven track record of 85% employment post-training.
+
+Our programs include:
+• Digital Literacy Training for underserved communities
+• Youth Empowerment through technology education
+• Rural Education Access in Bihar
+
+I'd love to learn more about ${organization_name}'s mission and how we might collaborate to create meaningful impact.
+
+Looking forward to connecting.
+
+Best regards,
+Diksha Foundation Team""",
+            
+            "proposal": """Subject: Partnership Proposal - ${organization_name}
+
+Dear ${contact_person},
+
+Thank you for your interest in partnering with Diksha Foundation. We're excited to present this proposal for collaboration.
+
+PROPOSAL OVERVIEW:
+We propose a partnership to expand our digital literacy programs in underserved communities, leveraging ${organization_name}'s expertise and resources.
+
+PROJECT DETAILS:
+• Target: 500 youth in rural Bihar
+• Duration: 12 months
+• Budget: ₹25,00,000
+• Expected Impact: 85% employment rate post-training
+
+We believe this partnership will create significant social impact while aligning with ${organization_name}'s CSR objectives.
+
+Please let us know your thoughts and availability for a discussion.
+
+Best regards,
+Diksha Foundation Team"""
+        }
+        
+        return sample_templates.get(template_name, "")
     
     def generate_email(self, template_type: str, donor_data: Dict[str, Any], mode: Optional[str] = None) -> Tuple[str, str]:
         """Generate email based on template type and donor data"""
@@ -708,7 +782,7 @@ class EmailGenerator:
         
         context += f"{stage_enhancements.get(template_type, 'Enhance professionalism and engagement while maintaining core message.')}"
         
-        context += f"\n\nPlease enhance the base template above. Return the enhanced version in this exact format:\n\nSUBJECT: [enhanced subject line]\n\nBODY:\n[enhanced email body]\n\nSIGNATURE:\n[professional signature]"
+        context += f"\n\nIMPORTANT: Please enhance the base template above while maintaining its core structure and message. Make it more personalized, compelling, and professional. Return the enhanced version in this exact format:\n\nSUBJECT: [enhanced subject line]\n\nBODY:\n[enhanced email body]\n\nSIGNATURE:\n[professional signature]"
         
         return context
     
@@ -734,11 +808,11 @@ class EmailGenerator:
             drive_template_content = self.get_template_content(template_type)
             
             if drive_template_content:
-                logger.info(f"Using Drive template content for {template_type}")
-                # Use Drive template as base
+                logger.info(f"✅ Using template content for {template_type} as base for AI enhancement")
+                # Use template as base
                 base_subject, base_body = self._generate_from_drive_template(template_type, donor_data, drive_template_content)
             else:
-                logger.info(f"No Drive template found for {template_type}, using hardcoded template")
+                logger.info(f"⚠️ No template found for {template_type}, using hardcoded template")
                 # Fallback to hardcoded template
                 base_subject, base_body = self._generate_custom_email(template_type, donor_data)
             
