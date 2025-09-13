@@ -30,12 +30,12 @@ if lib_path and lib_path not in sys.path:
 
 # Import API functions
 try:
-    from lib import test_api_connection, get_pipeline_data, get_templates
+    from lib import test_api_connection, get_pipeline_data, get_templates, test_connection_robustness
     print("✅ Using lib package imports for debug")
 except ImportError as e:
     print(f"❌ Lib package import failed: {e}")
     try:
-        from api import test_api_connection, get_pipeline_data, get_templates
+        from api import test_api_connection, get_pipeline_data, get_templates, test_connection_robustness
         print("✅ Using direct module imports for debug")
     except ImportError as e:
         print(f"❌ Direct module import failed: {e}")
@@ -46,6 +46,8 @@ except ImportError as e:
             return None
         def get_templates():
             return None
+        def test_connection_robustness():
+            return {"overall_status": "error", "error": "API module not available"}
 
 # Page configuration
 st.set_page_config(
@@ -119,6 +121,48 @@ def main():
     
     for key, value in env_vars.items():
         st.text(f"{key}: {value}")
+    
+    # Connection Robustness Test
+    st.header("🛡️ Connection Robustness Test")
+    
+    if st.button("🛡️ Test Connection Robustness", use_container_width=True):
+        with st.spinner("Testing connection robustness..."):
+            robustness_results = test_connection_robustness()
+            
+            # Overall status
+            status = robustness_results.get("overall_status", "unknown")
+            if status == "excellent":
+                st.success("🟢 Excellent - All tests passed!")
+            elif status == "good":
+                st.warning("🟡 Good - Most tests passed")
+            elif status == "poor":
+                st.error("🟠 Poor - Some tests failed")
+            else:
+                st.error("🔴 Failed - All tests failed")
+            
+            # Detailed results
+            st.subheader("Detailed Test Results:")
+            
+            # Health check
+            health_test = robustness_results.get("health_check", {})
+            if health_test.get("status") == "success":
+                st.success(f"✅ Health Check: {health_test.get('response_time')} - {health_test.get('data_size')} bytes")
+            else:
+                st.error(f"❌ Health Check: {health_test.get('error', 'Failed')}")
+            
+            # Pipeline data
+            pipeline_test = robustness_results.get("pipeline_data", {})
+            if pipeline_test.get("status") == "success":
+                st.success(f"✅ Pipeline Data: {pipeline_test.get('response_time')} - {pipeline_test.get('record_count')} records")
+            else:
+                st.error(f"❌ Pipeline Data: {pipeline_test.get('error', 'Failed')}")
+            
+            # Templates
+            templates_test = robustness_results.get("templates", {})
+            if templates_test.get("status") == "success":
+                st.success(f"✅ Templates: {templates_test.get('response_time')} - {templates_test.get('template_count')} templates")
+            else:
+                st.error(f"❌ Templates: {templates_test.get('error', 'Failed')}")
     
     # Clear Cache
     st.header("🗑️ Cache Management")
