@@ -280,10 +280,10 @@ def main():
                 # Fallback to sample data with notice
                 st.warning("⚠️ Unable to load live data. Showing sample data.")
                 display_sample_kanban_pipeline()
-                
-        # Check if we're in edit mode
-        if hasattr(st.session_state, 'edit_donor_id') and st.session_state.edit_donor_id:
-            show_edit_donor_form()
+            
+            # Check if we're in edit mode
+            if hasattr(st.session_state, 'edit_donor_id') and st.session_state.edit_donor_id:
+                show_edit_donor_form()
                 
         except Exception as e:
             st.error(f"❌ Error loading pipeline data: {str(e)}")
