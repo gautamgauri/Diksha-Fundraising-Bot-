@@ -816,10 +816,10 @@ def add_new_prospect():
                             "next_action_date": ""
                         }
                         
-                    # Log the activity
-                    log_activity(
-                        "prospect_added",
-                        "new_prospect",
+                        # Log the activity
+                        log_activity(
+                            "prospect_added",
+                            "new_prospect",
                             f"Added new prospect: {org_name.strip()}"
                         )
                         
