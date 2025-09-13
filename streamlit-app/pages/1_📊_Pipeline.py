@@ -1248,7 +1248,7 @@ def show_pipeline_analytics():
                 st.markdown("**Prospects by Team Member**")
                 for person, count in sorted(team_counts.items(), key=lambda x: x[1], reverse=True):
                     if person != 'Unassigned':
-                    percentage = (count / total_prospects) * 100
+                        percentage = (count / total_prospects) * 100
                         st.write(f"**{person}:** {count} prospects ({percentage:.1f}%)")
             
             with col2:
