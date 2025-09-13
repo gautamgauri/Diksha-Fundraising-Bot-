@@ -1982,6 +1982,33 @@ def debug_test_deepseek():
             "ok": False
         }), 500
 
+# Add debug endpoint for data quality
+@app.route('/debug/data-quality', methods=['GET'])
+def debug_data_quality():
+    """Debug endpoint for data quality statistics"""
+    try:
+        if not donor_service:
+            return jsonify({
+                "ok": False,
+                "error": "Donor service not available"
+            }), 503
+        
+        stats = donor_service.get_data_quality_stats()
+        
+        return jsonify({
+            "ok": True,
+            "data_quality": stats,
+            "mode": "slack-bolt"
+        })
+        
+    except Exception as e:
+        logger.error(f"Data quality check error: {e}")
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+            "mode": "slack-bolt"
+        }), 500
+
 # Add debug endpoint for template management
 @app.route('/debug/template-management', methods=['GET', 'POST'])
 def debug_template_management():

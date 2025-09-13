@@ -336,12 +336,17 @@ def test_api_connection() -> Dict[str, Any]:
             "backend_type": "unknown"
         }
 
+def get_data_quality_stats() -> Optional[Dict]:
+    """Get data quality statistics"""
+    return make_api_request("/debug/data-quality")
+
 def test_connection_robustness() -> Dict[str, Any]:
     """Test connection robustness with multiple scenarios"""
     results = {
         "health_check": None,
         "pipeline_data": None,
         "templates": None,
+        "data_quality": None,
         "overall_status": "unknown"
     }
     
@@ -384,13 +389,28 @@ def test_connection_robustness() -> Dict[str, Any]:
     except Exception as e:
         results["templates"] = {"status": "error", "error": str(e)}
     
+    # Test 4: Data Quality
+    try:
+        start_time = time.time()
+        data_quality = make_api_request("/debug/data-quality")
+        end_time = time.time()
+        results["data_quality"] = {
+            "status": "success" if data_quality else "failed",
+            "response_time": f"{end_time - start_time:.2f}s",
+            "actual_records": data_quality.get("data_quality", {}).get("actual_records", 0) if data_quality else 0,
+            "total_rows": data_quality.get("data_quality", {}).get("total_rows", 0) if data_quality else 0,
+            "quality_percentage": data_quality.get("data_quality", {}).get("data_quality_percentage", 0) if data_quality else 0
+        }
+    except Exception as e:
+        results["data_quality"] = {"status": "error", "error": str(e)}
+    
     # Determine overall status
     success_count = sum(1 for test in results.values() if isinstance(test, dict) and test.get("status") == "success")
-    if success_count == 3:
+    if success_count == 4:
         results["overall_status"] = "excellent"
-    elif success_count >= 2:
+    elif success_count >= 3:
         results["overall_status"] = "good"
-    elif success_count >= 1:
+    elif success_count >= 2:
         results["overall_status"] = "poor"
     else:
         results["overall_status"] = "failed"

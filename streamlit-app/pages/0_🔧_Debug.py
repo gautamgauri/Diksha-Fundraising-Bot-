@@ -30,12 +30,12 @@ if lib_path and lib_path not in sys.path:
 
 # Import API functions
 try:
-    from lib import test_api_connection, get_pipeline_data, get_templates, test_connection_robustness
+    from lib import test_api_connection, get_pipeline_data, get_templates, test_connection_robustness, get_data_quality_stats
     print("✅ Using lib package imports for debug")
 except ImportError as e:
     print(f"❌ Lib package import failed: {e}")
     try:
-        from api import test_api_connection, get_pipeline_data, get_templates, test_connection_robustness
+        from api import test_api_connection, get_pipeline_data, get_templates, test_connection_robustness, get_data_quality_stats
         print("✅ Using direct module imports for debug")
     except ImportError as e:
         print(f"❌ Direct module import failed: {e}")
@@ -48,6 +48,8 @@ except ImportError as e:
             return None
         def test_connection_robustness():
             return {"overall_status": "error", "error": "API module not available"}
+        def get_data_quality_stats():
+            return None
 
 # Page configuration
 st.set_page_config(
@@ -109,6 +111,57 @@ def main():
             else:
                 st.error("❌ Failed to retrieve templates")
     
+    # Data Quality Test
+    st.header("📊 Data Quality Analysis")
+    
+    if st.button("🔄 Analyze Data Quality", use_container_width=True):
+        with st.spinner("Analyzing data quality..."):
+            quality_stats = get_data_quality_stats()
+            
+            if quality_stats and quality_stats.get("data_quality"):
+                stats = quality_stats["data_quality"]
+                
+                # Overall quality
+                quality_pct = stats.get("data_quality_percentage", 0)
+                if quality_pct >= 80:
+                    st.success(f"🟢 Excellent Data Quality: {quality_pct}%")
+                elif quality_pct >= 60:
+                    st.warning(f"🟡 Good Data Quality: {quality_pct}%")
+                elif quality_pct >= 40:
+                    st.error(f"🟠 Poor Data Quality: {quality_pct}%")
+                else:
+                    st.error(f"🔴 Very Poor Data Quality: {quality_pct}%")
+                
+                # Detailed breakdown
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.metric("Total Rows", stats.get("total_rows", 0))
+                    st.metric("Actual Records", stats.get("actual_records", 0))
+                
+                with col2:
+                    st.metric("With Organization Name", stats.get("records_with_organization_name", 0))
+                    st.metric("With Contact Person", stats.get("records_with_contact_person", 0))
+                
+                with col3:
+                    st.metric("With Email", stats.get("records_with_email", 0))
+                    st.metric("With Stage", stats.get("records_with_stage", 0))
+                
+                # Show the actual records
+                if stats.get("actual_records", 0) > 0:
+                    st.subheader("📋 Actual Records Found:")
+                    pipeline_data = get_pipeline_data()
+                    if pipeline_data:
+                        for i, record in enumerate(pipeline_data[:10]):  # Show first 10
+                            with st.expander(f"Record {i+1}: {record.get('organization_name', 'Unknown')}"):
+                                st.json(record)
+                        
+                        if len(pipeline_data) > 10:
+                            st.info(f"Showing first 10 of {len(pipeline_data)} actual records")
+                
+            else:
+                st.error("❌ Failed to retrieve data quality statistics")
+    
     # Environment Variables
     st.header("🔧 Environment Variables")
     
@@ -163,6 +216,16 @@ def main():
                 st.success(f"✅ Templates: {templates_test.get('response_time')} - {templates_test.get('template_count')} templates")
             else:
                 st.error(f"❌ Templates: {templates_test.get('error', 'Failed')}")
+            
+            # Data Quality
+            data_quality_test = robustness_results.get("data_quality", {})
+            if data_quality_test.get("status") == "success":
+                actual_records = data_quality_test.get('actual_records', 0)
+                total_rows = data_quality_test.get('total_rows', 0)
+                quality_pct = data_quality_test.get('quality_percentage', 0)
+                st.success(f"✅ Data Quality: {data_quality_test.get('response_time')} - {actual_records}/{total_rows} records ({quality_pct}%)")
+            else:
+                st.error(f"❌ Data Quality: {data_quality_test.get('error', 'Failed')}")
     
     # Clear Cache
     st.header("🗑️ Cache Management")

@@ -57,7 +57,7 @@ class DonorService:
             return None
     
     def get_all_donors(self) -> List[Dict[str, Any]]:
-        """Get all donors from the pipeline"""
+        """Get all donors from the pipeline (filtered for actual data)"""
         if not self.sheets_db or not self.sheets_db.initialized:
             return []
         
@@ -68,9 +68,18 @@ class DonorService:
             for stage_orgs in pipeline.values():
                 all_orgs.extend(stage_orgs)
             
+            # Filter out empty records - only include records with actual organization names
+            filtered_orgs = [
+                org for org in all_orgs 
+                if org.get("organization_name") and 
+                   str(org.get("organization_name", "")).strip() != ""
+            ]
+            
+            logger.info(f"Filtered {len(filtered_orgs)} actual records from {len(all_orgs)} total rows")
+            
             # Convert to web UI format
             donors = []
-            for org in all_orgs:
+            for org in filtered_orgs:
                 donor_id = org.get("organization_name", "").replace(" ", "_").lower()
                 donor = {
                     "id": donor_id,
@@ -97,6 +106,55 @@ class DonorService:
         except Exception as e:
             logger.error(f"Error getting all donors: {e}")
             return []
+    
+    def get_data_quality_stats(self) -> Dict[str, Any]:
+        """Get data quality statistics"""
+        if not self.sheets_db or not self.sheets_db.initialized:
+            return {"error": "Sheets not initialized"}
+        
+        try:
+            # Get all organizations from the pipeline
+            all_orgs = []
+            pipeline = self.sheets_db.get_pipeline()
+            for stage_orgs in pipeline.values():
+                all_orgs.extend(stage_orgs)
+            
+            total_rows = len(all_orgs)
+            
+            # Count records with actual data
+            records_with_org_name = len([
+                org for org in all_orgs 
+                if org.get("organization_name") and str(org.get("organization_name", "")).strip() != ""
+            ])
+            
+            records_with_contact = len([
+                org for org in all_orgs 
+                if org.get("contact_person") and str(org.get("contact_person", "")).strip() != ""
+            ])
+            
+            records_with_email = len([
+                org for org in all_orgs 
+                if org.get("email") and str(org.get("email", "")).strip() != ""
+            ])
+            
+            records_with_stage = len([
+                org for org in all_orgs 
+                if org.get("current_stage") and str(org.get("current_stage", "")).strip() != ""
+            ])
+            
+            return {
+                "total_rows": total_rows,
+                "records_with_organization_name": records_with_org_name,
+                "records_with_contact_person": records_with_contact,
+                "records_with_email": records_with_email,
+                "records_with_stage": records_with_stage,
+                "data_quality_percentage": round((records_with_org_name / total_rows * 100), 2) if total_rows > 0 else 0,
+                "actual_records": records_with_org_name
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting data quality stats: {e}")
+            return {"error": str(e)}
     
     def update_donor_stage(self, donor_id: str, stage: str) -> bool:
         """Update donor stage"""
