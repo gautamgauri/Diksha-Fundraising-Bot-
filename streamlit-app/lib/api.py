@@ -38,27 +38,32 @@ def make_api_request(endpoint: str, method: str = "GET", data: Optional[Dict] = 
         url = f"{API_BASE}{endpoint}"
         
         if method == "GET":
-            response = requests.get(url, timeout=5)
+            response = requests.get(url, timeout=10)
         elif method == "POST":
-            response = requests.post(url, json=data, timeout=5)
+            response = requests.post(url, json=data, timeout=10)
         elif method == "PUT":
-            response = requests.put(url, json=data, timeout=5)
+            response = requests.put(url, json=data, timeout=10)
         elif method == "DELETE":
-            response = requests.delete(url, timeout=5)
+            response = requests.delete(url, timeout=10)
         else:
             raise ValueError(f"Unsupported HTTP method: {method}")
         
         response.raise_for_status()
         return response.json()
         
-    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+        print(f"❌ Backend connection failed: {e}")
         # Backend not available, use direct Google Sheets integration
         return get_data_directly_from_sheets(endpoint)
     except requests.exceptions.HTTPError as e:
-        st.error(f"❌ API Error: {e.response.status_code} - {e.response.text}")
+        print(f"❌ API Error: {e.response.status_code} - {e.response.text}")
+        if 'st' in globals():
+            st.error(f"❌ API Error: {e.response.status_code} - {e.response.text}")
         return None
     except Exception as e:
-        st.error(f"❌ Unexpected error: {str(e)}")
+        print(f"❌ Unexpected error: {str(e)}")
+        if 'st' in globals():
+            st.error(f"❌ Unexpected error: {str(e)}")
         return None
 
 def get_data_directly_from_sheets(endpoint: str) -> Optional[Dict]:
@@ -73,7 +78,10 @@ def get_data_directly_from_sheets(endpoint: str) -> Optional[Dict]:
     """
     try:
         # Import self-contained Google Sheets integration
-        from .sheets_integration import sheets_integration
+        try:
+            from .sheets_integration import sheets_integration
+        except ImportError:
+            from sheets_integration import sheets_integration
         
         # Check if integration is initialized
         if not sheets_integration.initialized:
