@@ -859,7 +859,7 @@ def add_new_prospect():
                         # Auto-refresh after a short delay
                         st.balloons()
                         st.info("🔄 Refreshing pipeline data...")
-                    st.rerun()
+                        st.rerun()
                         
                     except Exception as e:
                         st.error(f"❌ **Error adding prospect:** {str(e)}")
