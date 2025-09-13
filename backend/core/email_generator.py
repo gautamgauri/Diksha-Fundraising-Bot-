@@ -144,6 +144,9 @@ class EmailGenerator:
             time_window=60
         )
         
+        # Initialize status
+        self.initialized = bool(self.claude_api_key)
+        
         # Log deployment mode
         logger.info(f"EmailGenerator initialized in {DEPLOYMENT_MODE.value} mode")
     
