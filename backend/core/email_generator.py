@@ -319,7 +319,21 @@ class EmailGenerator:
     def _find_templates_folder(self) -> Optional[Dict[str, Any]]:
         """Find the Templates folder in Google Drive"""
         try:
-            # Common folder names for templates
+            # First, try to use the specific folder ID if provided
+            specific_folder_id = "1MMAqZY28CvwEGYjcm913InVDlZOyhRus"
+            try:
+                folder_info = self.drive_service.files().get(
+                    fileId=specific_folder_id,
+                    fields='id, name, mimeType'
+                ).execute()
+                
+                if folder_info.get('mimeType') == 'application/vnd.google-apps.folder':
+                    logger.info(f"✅ Found specific templates folder: {folder_info.get('name')} (ID: {specific_folder_id})")
+                    return {'id': specific_folder_id, 'name': folder_info.get('name')}
+            except Exception as e:
+                logger.warning(f"Could not access specific folder ID {specific_folder_id}: {e}")
+            
+            # Fallback: Search for common folder names
             possible_names = [
                 "Templates",
                 "Email Templates", 
@@ -541,6 +555,55 @@ Diksha Foundation Team"""
         }
         
         return sample_templates.get(template_name, "")
+    
+    def upload_template_to_drive(self, template_name: str, template_content: str) -> bool:
+        """Upload a template to the Google Drive templates folder"""
+        try:
+            if not self.drive_service:
+                logger.error("Google Drive service not available")
+                return False
+            
+            # Find the templates folder
+            templates_folder = self._find_templates_folder()
+            if not templates_folder:
+                logger.error("Templates folder not found")
+                return False
+            
+            # Create the file metadata
+            file_metadata = {
+                'name': f"{template_name}_template.txt",
+                'parents': [templates_folder['id']]
+            }
+            
+            # Create the file
+            file = self.drive_service.files().create(
+                body=file_metadata,
+                media_body=template_content,
+                fields='id'
+            ).execute()
+            
+            logger.info(f"✅ Successfully uploaded template '{template_name}' to Drive (ID: {file.get('id')})")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error uploading template {template_name} to Drive: {e}")
+            return False
+    
+    def create_and_upload_sample_templates(self) -> Dict[str, bool]:
+        """Create and upload sample templates to Google Drive"""
+        results = {}
+        sample_templates = ["intro", "proposal", "followup", "meeting_request"]
+        
+        for template_name in sample_templates:
+            template_content = self.create_sample_template(template_name)
+            if template_content:
+                success = self.upload_template_to_drive(template_name, template_content)
+                results[template_name] = success
+            else:
+                results[template_name] = False
+                logger.warning(f"No sample template available for {template_name}")
+        
+        return results
     
     def generate_email(self, template_type: str, donor_data: Dict[str, Any], mode: Optional[str] = None) -> Tuple[str, str]:
         """Generate email based on template type and donor data"""

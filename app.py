@@ -1982,6 +1982,70 @@ def debug_test_deepseek():
             "ok": False
         }), 500
 
+# Add debug endpoint for template management
+@app.route('/debug/template-management', methods=['GET', 'POST'])
+def debug_template_management():
+    """Debug endpoint for template management"""
+    try:
+        if not email_generator or not email_generator.initialized:
+            return jsonify({
+                "ok": False,
+                "error": "Email generator not available"
+            }), 503
+        
+        if request.method == 'GET':
+            # Get template information
+            templates = email_generator.get_available_templates()
+            drive_templates = email_generator._get_templates_from_drive()
+            
+            return jsonify({
+                "ok": True,
+                "available_templates": templates,
+                "drive_templates": list(drive_templates.keys()) if drive_templates else [],
+                "drive_service_available": email_generator.drive_service is not None,
+                "mode": "slack-bolt"
+            })
+        
+        elif request.method == 'POST':
+            # Create and upload sample templates
+            data = request.get_json() or {}
+            action = data.get('action', 'upload_samples')
+            
+            if action == 'upload_samples':
+                results = email_generator.create_and_upload_sample_templates()
+                return jsonify({
+                    "ok": True,
+                    "action": "upload_samples",
+                    "results": results,
+                    "mode": "slack-bolt"
+                })
+            
+            elif action == 'test_template':
+                template_name = data.get('template_name', 'intro')
+                template_content = email_generator.get_template_content(template_name)
+                return jsonify({
+                    "ok": True,
+                    "action": "test_template",
+                    "template_name": template_name,
+                    "template_found": template_content is not None,
+                    "template_preview": template_content[:200] + "..." if template_content and len(template_content) > 200 else template_content,
+                    "mode": "slack-bolt"
+                })
+            
+            return jsonify({
+                "ok": False,
+                "error": "Unknown action",
+                "available_actions": ["upload_samples", "test_template"]
+            }), 400
+        
+    except Exception as e:
+        logger.error(f"Template management error: {e}")
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+            "mode": "slack-bolt"
+        }), 500
+
 # Add debug endpoint for testing context helpers
 @app.route('/debug/context', methods=['GET'])
 def debug_context():
