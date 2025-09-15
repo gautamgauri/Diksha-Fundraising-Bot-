@@ -24,6 +24,8 @@ if not API_BASE or API_BASE == "http://localhost:5000":
         # Fallback to localhost for development
         API_BASE = "http://localhost:5000"
 
+DEFAULT_TIMEOUT = (5, 15)  # (connect timeout, read timeout)
+
 # Create a robust session with retry logic
 def create_robust_session():
     """Create a requests session with retry logic and robust error handling"""
@@ -33,8 +35,9 @@ def create_robust_session():
     retry_strategy = Retry(
         total=3,  # Total number of retries
         backoff_factor=1,  # Wait time between retries (1, 2, 4 seconds)
-        status_forcelist=[429, 500, 502, 503, 504],  # HTTP status codes to retry
-        allowed_methods=["HEAD", "GET", "PUT", "DELETE", "OPTIONS", "TRACE", "POST"]
+        status_forcelist=[429, 502, 503, 504],  # HTTP status codes to retry
+        allowed_methods=["HEAD", "GET", "PUT", "DELETE", "OPTIONS", "TRACE", "POST"],
+        raise_on_status=False
     )
     
     # Mount adapter with retry strategy
@@ -74,14 +77,15 @@ def make_api_request(endpoint: str, method: str = "GET", data: Optional[Dict] = 
         url = f"{API_BASE}{endpoint}"
         session = get_robust_session()
         
+        request_kwargs = {"timeout": DEFAULT_TIMEOUT}
         if method == "GET":
-            response = session.get(url)
+            response = session.get(url, **request_kwargs)
         elif method == "POST":
-            response = session.post(url, json=data)
+            response = session.post(url, json=data, **request_kwargs)
         elif method == "PUT":
-            response = session.put(url, json=data)
+            response = session.put(url, json=data, **request_kwargs)
         elif method == "DELETE":
-            response = session.delete(url)
+            response = session.delete(url, **request_kwargs)
         else:
             raise ValueError(f"Unsupported HTTP method: {method}")
         
@@ -93,9 +97,34 @@ def make_api_request(endpoint: str, method: str = "GET", data: Optional[Dict] = 
         # Backend not available, use direct Google Sheets integration
         return get_data_directly_from_sheets(endpoint)
     except requests.exceptions.HTTPError as e:
-        print(f"❌ API Error: {e.response.status_code} - {e.response.text}")
+        response = e.response
+        status_code = response.status_code if response is not None else 'unknown'
+        error_payload = None
+        error_message = str(e)
+        if response is not None:
+            try:
+                error_payload = response.json()
+                if isinstance(error_payload, dict):
+                    error_message = error_payload.get('error') or error_payload.get('message') or str(error_payload)
+                else:
+                    error_message = str(error_payload)
+            except ValueError:
+                response_text = response.text.strip() if hasattr(response, 'text') and response.text else ''
+                if response_text:
+                    error_message = response_text
+        log_message = f"❌ API Error {status_code}: {error_message}"
+        print(log_message)
         if 'st' in globals():
-            st.error(f"❌ API Error: {e.response.status_code} - {e.response.text}")
+            st.error(log_message)
+        if isinstance(error_payload, dict):
+            error_payload.setdefault('status_code', status_code)
+            return error_payload
+        return {"success": False, "error": error_message, "status_code": status_code}
+    except requests.exceptions.RetryError as e:
+        retry_message = f"❌ Retry error while calling backend: {e}"
+        print(retry_message)
+        if 'st' in globals():
+            st.error(retry_message)
         return None
     except Exception as e:
         print(f"❌ Unexpected error: {str(e)}")
