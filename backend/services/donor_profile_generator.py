@@ -77,7 +77,7 @@ class ModelManager:
                     }
                     self.logger.info("Anthropic models loaded successfully")
                 else:
-                    self.logger.error("Failed to initialize Anthropic client - no fallback succeeded")
+                    self.logger.warning("Anthropic client initialization failed - will use alternative models if available")
                     
             except ImportError:
                 self.logger.warning("Anthropic not available - install anthropic package")
@@ -115,7 +115,9 @@ class ModelManager:
             return ('anthropic', 'claude-3-5-sonnet-20241022')
         elif 'openai' in self.models:
             return ('openai', 'gpt-4o')
-        return None
+        else:
+            self.logger.warning("No AI models available for profile generation")
+            return None
     
     def select_best_evaluation_model(self):
         """Select the best model for profile evaluation"""
@@ -123,7 +125,9 @@ class ModelManager:
             return ('anthropic', 'claude-3-haiku-20240307')
         elif 'openai' in self.models:
             return ('openai', 'gpt-4o-mini')
-        return None
+        else:
+            self.logger.warning("No AI models available for profile evaluation")
+            return None
 
 
 class DataCollector:
