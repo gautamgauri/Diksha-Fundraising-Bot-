@@ -1264,13 +1264,25 @@ class DonorProfileService:
         }
 
         try:
-            # Validate prerequisites
-            if not self.model_manager.get_available_models():
+            # Check AI models (required)
+            available_models = self.model_manager.get_available_models()
+            if not available_models:
                 return {
                     "success": False,
-                    "error": "No AI models available. Please configure API keys.",
+                    "error": "No AI models available. Please configure ANTHROPIC_API_KEY or OPENAI_API_KEY.",
                     "end_time": datetime.now().isoformat()
                 }
+
+            # Check search services (optional - log status but don't fail)
+            available_search_services = [
+                name for name, config in self.data_collector.search_services.items()
+                if config.get('enabled') and not config.get('quota_exhausted', False)
+            ]
+
+            if not available_search_services:
+                self.logger.warning("No search services available - will use domain guessing and Wikipedia only")
+            else:
+                self.logger.info(f"Available search services: {', '.join(available_search_services)}")
 
             # Step 1: Data Collection
             self.logger.info("Step 1: Collecting research data...")
