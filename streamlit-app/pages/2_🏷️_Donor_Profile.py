@@ -210,9 +210,25 @@ def main():
         except Exception as e:
             st.error(f"Error checking profile generator status: {e}")
     
+    # Show backend connection status
+    backend_status = profile_status.get("backend_status", "unknown") if profile_status else "unknown"
+    if backend_status == "unavailable":
+        st.error("🚨 Backend Service Unavailable")
+        st.warning("The Railway deployment appears to be down. Profile generation is currently unavailable.")
+        st.info("💡 **Troubleshooting Steps:**")
+        st.markdown("""
+        1. Check your Railway deployment status
+        2. Verify environment variables are configured
+        3. Check Railway logs for errors
+        4. Ensure the Flask app is running on the correct port
+        """)
+    elif backend_status == "error":
+        st.warning("⚠️ Backend Connection Error")
+        st.info("There was an error connecting to the backend service.")
+
     if profile_status and profile_status.get("available"):
         st.success("✅ AI Profile Generator Available")
-        
+
         # Show available models
         models = profile_status.get("models", {})
         if models:
@@ -220,7 +236,7 @@ def main():
             for provider, info in models.items():
                 model_info.append(f"**{provider.title()}**: {', '.join(info.get('models', []))}")
             st.info("Available models: " + " | ".join(model_info))
-        
+
         # Google Docs status
         if profile_status.get("google_docs"):
             st.success("📄 Google Docs export enabled")
@@ -249,6 +265,12 @@ def main():
                     with st.spinner(f"Generating AI profile for {selected_donor}..."):
                         try:
                             result = generate_donor_profile(selected_donor.strip(), export_to_docs=True)
+
+                            # Handle case where result is None (shouldn't happen with new fixes, but safety check)
+                            if result is None:
+                                st.error("❌ Service returned no response. Backend may be unavailable.")
+                                st.info("💡 Try again in a few minutes or check your Railway deployment status.")
+                                return
                             
                             if result.get("success"):
                                 st.success("✅ Profile generated successfully!")

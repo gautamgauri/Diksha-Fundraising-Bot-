@@ -228,16 +228,21 @@ def generate_donor_profile_endpoint():
     """Generate an AI-powered donor profile"""
     try:
         if not donor_service:
+            logger.error("Donor service not initialized - backend manager failed")
             return jsonify({
                 "success": False,
-                "error": "Donor service not available"
+                "error": "Donor profile service is not available. Backend initialization failed.",
+                "steps": {},
+                "backend_status": "service_unavailable"
             }), 503
         
         data = request.get_json()
         if not data or 'donor_name' not in data:
             return jsonify({
                 "success": False,
-                "error": "donor_name is required"
+                "error": "donor_name is required",
+                "steps": {},
+                "backend_status": "invalid_request"
             }), 400
         
         donor_name = data.get('donor_name')
@@ -260,7 +265,9 @@ def generate_donor_profile_endpoint():
         logger.error(f"Error generating donor profile: {e}")
         return jsonify({
             "success": False,
-            "error": str(e)
+            "error": f"Profile generation failed: {str(e)}",
+            "steps": {},
+            "backend_status": "error"
         }), 500
 
 @app.route('/api/donor/profile-generator-status', methods=['GET'])
@@ -268,27 +275,34 @@ def get_profile_generator_status_endpoint():
     """Get the status of the profile generator"""
     try:
         if not donor_service:
+            logger.warning("Profile generator status check - donor service not initialized")
             return jsonify({
                 "success": False,
-                "error": "Donor service not available",
+                "error": "Donor profile service not initialized. Check backend configuration.",
                 "available": False,
                 "models": {},
-                "google_docs": False
+                "google_docs": False,
+                "backend_status": "service_unavailable"
             })
         
         # Get status from donor service
         status = donor_service.get_profile_generator_status()
-        
+
+        # Add backend status to response
+        if status:
+            status["backend_status"] = "connected"
+
         return jsonify(status)
-        
+
     except Exception as e:
         logger.error(f"Error getting profile generator status: {e}")
         return jsonify({
             "success": False,
-            "error": str(e),
+            "error": f"Status check failed: {str(e)}",
             "available": False,
             "models": {},
-            "google_docs": False
+            "google_docs": False,
+            "backend_status": "error"
         })
 
 @app.route('/api/moveStage', methods=['POST'])

@@ -357,31 +357,74 @@ def add_contact(contact_data: Dict) -> Optional[Dict]:
 def generate_donor_profile(donor_name: str, export_to_docs: bool = True) -> Optional[Dict]:
     """
     Generate an AI-powered donor profile
-    
+
     Args:
         donor_name: Name of the donor/organization
         export_to_docs: Whether to export to Google Docs
-    
+
     Returns:
-        Profile generation result or None if error
+        Profile generation result or fallback error dict
     """
-    data = {
-        "donor_name": donor_name,
-        "export_to_docs": export_to_docs
-    }
-    
-    response = make_api_request("/api/donor/generate-profile", method="POST", data=data)
-    return response
+    try:
+        data = {
+            "donor_name": donor_name,
+            "export_to_docs": export_to_docs
+        }
+
+        response = make_api_request("/api/donor/generate-profile", method="POST", data=data)
+
+        # If backend is down, return a proper error response instead of None
+        if response is None:
+            return {
+                "success": False,
+                "error": "Backend service is currently unavailable. Please try again later.",
+                "steps": {},
+                "donor_name": donor_name,
+                "backend_status": "unavailable"
+            }
+
+        return response
+
+    except Exception as e:
+        # Always return a proper dict, never None
+        return {
+            "success": False,
+            "error": f"Profile generation failed: {str(e)}",
+            "steps": {},
+            "donor_name": donor_name,
+            "backend_status": "error"
+        }
 
 def get_profile_generator_status() -> Optional[Dict]:
     """
     Get the status of the profile generator
-    
+
     Returns:
         Status information about available models and configuration
     """
-    response = make_api_request("/api/donor/profile-generator-status")
-    return response
+    try:
+        response = make_api_request("/api/donor/profile-generator-status")
+
+        # If backend is down, return unavailable status
+        if response is None:
+            return {
+                "available": False,
+                "error": "Backend service unavailable",
+                "models": {},
+                "google_docs": False,
+                "backend_status": "unavailable"
+            }
+
+        return response
+
+    except Exception as e:
+        return {
+            "available": False,
+            "error": f"Status check failed: {str(e)}",
+            "models": {},
+            "google_docs": False,
+            "backend_status": "error"
+        }
 
 def test_connection_robustness() -> Dict[str, Any]:
     """Test connection robustness with multiple scenarios"""
