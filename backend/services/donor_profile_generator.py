@@ -35,7 +35,7 @@ class ModelManager:
     def _load_models(self):
         """Load available AI models based on environment variables"""
         # Anthropic models - use lazy initialization like email generator
-        anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+        anthropic_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("CLAUDE_API_KEY")
         if anthropic_key and self._validate_api_key(anthropic_key):
             # Store the key for lazy initialization instead of creating client now
             self.models['anthropic'] = {
@@ -182,10 +182,10 @@ class DataCollector:
                     break
 
                 try:
-                    self.logger.info(f"🔍 Trying {service_name} for: {query[:50]}...")
+                    self.logger.info(f"Trying {service_name} for: {query[:50]}...")
                     url = self._search_with_service(service_name, query)
                     if url:
-                        self.logger.info(f"✅ Found URL using {service_name}: {url}")
+                        self.logger.info(f"Found URL using {service_name}: {url}")
                         return url
 
                 except Exception as e:
@@ -193,12 +193,12 @@ class DataCollector:
                     if self._is_quota_error(service_name, error_msg):
                         self._mark_service_exhausted(service_name, error_msg)
                     else:
-                        self.logger.error(f"❌ {service_name} search failed: {error_msg}")
+                        self.logger.error(f"{service_name} search failed: {error_msg}")
 
                 attempts += 1
 
         # Final fallback: domain guessing
-        self.logger.info("🎯 Falling back to domain guessing")
+        self.logger.info("Falling back to domain guessing")
         return self._guess_foundation_domain(donor_name)
 
     def _search_with_service(self, service_name: str, query: str) -> str:
@@ -812,8 +812,8 @@ class DataCollector:
     
     def conduct_web_scraping_research(self, donor_name: str) -> Dict:
         """Conduct comprehensive web research for donor"""
-        print(f"🔍 Starting web research for: {donor_name}")
-        
+        print(f"Starting web research for: {donor_name}")
+
         research_data = {
             "donor_name": donor_name,
             "website_data": {},
@@ -822,18 +822,18 @@ class DataCollector:
             "services_used": [],
             "research_timestamp": datetime.now().isoformat()
         }
-        
+
         # Get main website
         website_url = self.get_foundation_website(donor_name)
         if website_url:
-            print(f"📄 Found website: {website_url}")
+            print(f"Found website: {website_url}")
             website_data = self.scrape_foundation_page(website_url)
             research_data["website_data"] = website_data
 
         # Get Wikipedia information for additional context
         wikipedia_data = self._get_wikipedia_info(donor_name)
         if wikipedia_data:
-            print(f"📚 Found Wikipedia info: {wikipedia_data.get('title', 'N/A')}")
+            print(f"Found Wikipedia info: {wikipedia_data.get('title', 'N/A')}")
             research_data["wikipedia_data"] = wikipedia_data
             research_data["services_used"].append("wikipedia")
 
@@ -1092,7 +1092,14 @@ Make sure to:
                 self.model_manager.logger.info("Anthropic client initialized successfully")
             except Exception as e:
                 self.model_manager.logger.warning(f"Basic Anthropic initialization failed: {e}")
-                return None
+                # Try alternative initialization without extra parameters
+                try:
+                    import anthropic
+                    client = anthropic.Anthropic(api_key=api_key)
+                    self.model_manager.logger.info("Anthropic client initialized with fallback method")
+                except Exception as e2:
+                    self.model_manager.logger.error(f"All Anthropic initialization methods failed: {e2}")
+                    return None
             
             # Store the client for future use
             anthropic_config['client'] = client

@@ -141,4 +141,19 @@ test_*.py
 
 # Cache
 .cache/
-.parcel-cache/
+.parcel-cache/# Add additional API key patterns to be extra safe
+*.key
+*.pem
+*_key.txt
+*_secret.txt
+.secrets/
+secrets/
+api_keys/
+.credentials/
+credentials/
+
+# Specific API key patterns
+**/ANTHROPIC_API_KEY*
+**/OPENAI_API_KEY*
+**/DEEPSEEK_API_KEY*
+**/GEMINI_API_KEY*
