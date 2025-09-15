@@ -34,55 +34,17 @@ class ModelManager:
     
     def _load_models(self):
         """Load available AI models based on environment variables"""
-        # Anthropic models
+        # Anthropic models - use lazy initialization like email generator
         anthropic_key = os.getenv("ANTHROPIC_API_KEY")
         if anthropic_key and self._validate_api_key(anthropic_key):
-            try:
-                import anthropic
-                # Try different initialization approaches to handle proxy issues
-                client = None
-                
-                # Approach 1: Basic initialization
-                try:
-                    client = anthropic.Anthropic(api_key=anthropic_key)
-                    self.logger.info("Anthropic client initialized successfully (basic)")
-                except TypeError as te:
-                    if "proxies" in str(te):
-                        self.logger.warning("Proxy parameter issue detected, trying alternative initialization")
-                        # Approach 2: Force clean environment
-                        old_env = {}
-                        proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
-                        for var in proxy_vars:
-                            if var in os.environ:
-                                old_env[var] = os.environ[var]
-                                del os.environ[var]
-                        
-                        try:
-                            client = anthropic.Anthropic(api_key=anthropic_key)
-                            self.logger.info("Anthropic client initialized successfully (clean env)")
-                        except Exception as e2:
-                            self.logger.error(f"Alternative initialization failed: {e2}")
-                        finally:
-                            # Restore environment variables
-                            for var, value in old_env.items():
-                                os.environ[var] = value
-                    else:
-                        raise te
-                
-                if client:
-                    self.models['anthropic'] = {
-                        'client': client,
-                        'models': ['claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307'],
-                        'type': 'anthropic'
-                    }
-                    self.logger.info("Anthropic models loaded successfully")
-                else:
-                    self.logger.warning("Anthropic client initialization failed - will use alternative models if available")
-                    
-            except ImportError:
-                self.logger.warning("Anthropic not available - install anthropic package")
-            except Exception as e:
-                self.logger.error(f"Failed to initialize Anthropic client: {e}")
+            # Store the key for lazy initialization instead of creating client now
+            self.models['anthropic'] = {
+                'api_key': anthropic_key,
+                'models': ['claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307'],
+                'type': 'anthropic',
+                'client': None  # Will be initialized when needed
+            }
+            self.logger.info("Anthropic API key configured - client will be initialized when needed")
 
         # OpenAI models
         openai_key = os.getenv("OPENAI_API_KEY")
@@ -101,6 +63,43 @@ class ModelManager:
             except Exception as e:
                 self.logger.error(f"Failed to initialize OpenAI client: {e}")
 
+        # Google Gemini models
+        gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_AI_API_KEY")
+        if gemini_key and self._validate_api_key(gemini_key):
+            try:
+                import google.generativeai as genai
+                genai.configure(api_key=gemini_key)
+                self.models['gemini'] = {
+                    'client': genai,
+                    'models': ['gemini-1.5-pro', 'gemini-1.5-flash'],
+                    'type': 'gemini'
+                }
+                self.logger.info("Google Gemini models loaded successfully")
+            except ImportError:
+                self.logger.warning("Google Gemini not available - install google-generativeai package")
+            except Exception as e:
+                self.logger.error(f"Failed to initialize Gemini client: {e}")
+
+        # Deepseek models
+        deepseek_key = os.getenv("DEEPSEEK_API_KEY")
+        if deepseek_key and self._validate_api_key(deepseek_key):
+            try:
+                import openai  # Deepseek uses OpenAI-compatible API
+                client = openai.OpenAI(
+                    api_key=deepseek_key,
+                    base_url="https://api.deepseek.com"
+                )
+                self.models['deepseek'] = {
+                    'client': client,
+                    'models': ['deepseek-chat', 'deepseek-coder'],
+                    'type': 'deepseek'
+                }
+                self.logger.info("Deepseek models loaded successfully")
+            except ImportError:
+                self.logger.warning("OpenAI package required for Deepseek - install openai package")
+            except Exception as e:
+                self.logger.error(f"Failed to initialize Deepseek client: {e}")
+
     def _validate_api_key(self, api_key: str) -> bool:
         """Basic API key validation"""
         return api_key and len(api_key.strip()) > 10 and not api_key.startswith('your-')
@@ -115,6 +114,10 @@ class ModelManager:
             return ('anthropic', 'claude-3-5-sonnet-20241022')
         elif 'openai' in self.models:
             return ('openai', 'gpt-4o')
+        elif 'gemini' in self.models:
+            return ('gemini', 'gemini-1.5-pro')
+        elif 'deepseek' in self.models:
+            return ('deepseek', 'deepseek-chat')
         else:
             self.logger.warning("No AI models available for profile generation")
             return None
@@ -125,6 +128,10 @@ class ModelManager:
             return ('anthropic', 'claude-3-haiku-20240307')
         elif 'openai' in self.models:
             return ('openai', 'gpt-4o-mini')
+        elif 'gemini' in self.models:
+            return ('gemini', 'gemini-1.5-flash')
+        elif 'deepseek' in self.models:
+            return ('deepseek', 'deepseek-chat')
         else:
             self.logger.warning("No AI models available for profile evaluation")
             return None
@@ -990,6 +997,10 @@ class ProfileGenerator:
                 response = self._generate_with_anthropic(model, prompt)
             elif provider == 'openai':
                 response = self._generate_with_openai(model, prompt)
+            elif provider == 'gemini':
+                response = self._generate_with_gemini(model, prompt)
+            elif provider == 'deepseek':
+                response = self._generate_with_deepseek(model, prompt)
             else:
                 return {"success": False, "error": f"Unsupported provider: {provider}"}
             
@@ -1045,7 +1056,10 @@ Make sure to:
     
     def _generate_with_anthropic(self, model: str, prompt: str) -> str:
         """Generate profile using Anthropic Claude"""
-        client = self.model_manager.models['anthropic']['client']
+        # Lazy initialization of Anthropic client
+        client = self._get_anthropic_client()
+        if not client:
+            raise Exception("Failed to initialize Anthropic client")
         
         message = client.messages.create(
             model=model,
@@ -1056,6 +1070,41 @@ Make sure to:
         
         return message.content[0].text
     
+    def _get_anthropic_client(self):
+        """Get or create Anthropic client with lazy initialization"""
+        if 'anthropic' not in self.model_manager.models:
+            return None
+            
+        anthropic_config = self.model_manager.models['anthropic']
+        
+        # Return existing client if already initialized
+        if anthropic_config.get('client'):
+            return anthropic_config['client']
+        
+        # Initialize client now
+        try:
+            import anthropic
+            api_key = anthropic_config['api_key']
+            
+            # Try basic initialization first
+            try:
+                client = anthropic.Anthropic(api_key=api_key)
+                self.model_manager.logger.info("Anthropic client initialized successfully")
+            except Exception as e:
+                self.model_manager.logger.warning(f"Basic Anthropic initialization failed: {e}")
+                return None
+            
+            # Store the client for future use
+            anthropic_config['client'] = client
+            return client
+            
+        except ImportError:
+            self.model_manager.logger.warning("Anthropic package not available")
+            return None
+        except Exception as e:
+            self.model_manager.logger.error(f"Failed to initialize Anthropic client: {e}")
+            return None
+
     def _generate_with_openai(self, model: str, prompt: str) -> str:
         """Generate profile using OpenAI GPT"""
         client = self.model_manager.models['openai']['client']
@@ -1067,6 +1116,28 @@ Make sure to:
             temperature=0.3
         )
         
+        return response.choices[0].message.content
+
+    def _generate_with_gemini(self, model: str, prompt: str) -> str:
+        """Generate profile using Google Gemini"""
+        client = self.model_manager.models['gemini']['client']
+
+        gemini_model = client.GenerativeModel(model)
+        response = gemini_model.generate_content(prompt)
+
+        return response.text
+
+    def _generate_with_deepseek(self, model: str, prompt: str) -> str:
+        """Generate profile using Deepseek"""
+        client = self.model_manager.models['deepseek']['client']
+
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=4000,
+            temperature=0.3
+        )
+
         return response.choices[0].message.content
 
 
@@ -1089,6 +1160,10 @@ class ProfileEvaluator:
                 response = self._evaluate_with_anthropic(model, evaluation_prompt)
             elif provider == 'openai':
                 response = self._evaluate_with_openai(model, evaluation_prompt)
+            elif provider == 'gemini':
+                response = self._evaluate_with_gemini(model, evaluation_prompt)
+            elif provider == 'deepseek':
+                response = self._evaluate_with_deepseek(model, evaluation_prompt)
             else:
                 return {"success": False, "error": f"Unsupported provider: {provider}"}
             
@@ -1131,7 +1206,10 @@ Format: Start with "SCORE: [number]" then provide detailed feedback.
     
     def _evaluate_with_anthropic(self, model: str, prompt: str) -> str:
         """Evaluate using Anthropic Claude"""
-        client = self.model_manager.models['anthropic']['client']
+        # Lazy initialization of Anthropic client
+        client = self._get_anthropic_client()
+        if not client:
+            raise Exception("Failed to initialize Anthropic client")
         
         message = client.messages.create(
             model=model,
