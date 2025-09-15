@@ -354,6 +354,35 @@ def add_contact(contact_data: Dict) -> Optional[Dict]:
         return response
     return None
 
+def generate_donor_profile(donor_name: str, export_to_docs: bool = True) -> Optional[Dict]:
+    """
+    Generate an AI-powered donor profile
+    
+    Args:
+        donor_name: Name of the donor/organization
+        export_to_docs: Whether to export to Google Docs
+    
+    Returns:
+        Profile generation result or None if error
+    """
+    data = {
+        "donor_name": donor_name,
+        "export_to_docs": export_to_docs
+    }
+    
+    response = make_api_request("/api/donor/generate-profile", method="POST", data=data)
+    return response
+
+def get_profile_generator_status() -> Optional[Dict]:
+    """
+    Get the status of the profile generator
+    
+    Returns:
+        Status information about available models and configuration
+    """
+    response = make_api_request("/api/donor/profile-generator-status")
+    return response
+
 def test_connection_robustness() -> Dict[str, Any]:
     """Test connection robustness with multiple scenarios"""
     results = {

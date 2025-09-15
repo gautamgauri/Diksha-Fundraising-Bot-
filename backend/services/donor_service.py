@@ -9,12 +9,31 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+# Import profile generator with fallback
+try:
+    from .donor_profile_generator import DonorProfileService
+    PROFILE_GENERATOR_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Donor profile generator not available: {e}")
+    PROFILE_GENERATOR_AVAILABLE = False
+    DonorProfileService = None
+
 class DonorService:
     """Service for donor-related operations"""
     
     def __init__(self, sheets_db=None):
         """Initialize with sheets database"""
         self.sheets_db = sheets_db
+        
+        # Initialize profile generator if available
+        self.profile_generator = None
+        if PROFILE_GENERATOR_AVAILABLE:
+            try:
+                self.profile_generator = DonorProfileService()
+                logger.info("✅ Donor profile generator initialized")
+            except Exception as e:
+                logger.warning(f"Failed to initialize profile generator: {e}")
+                self.profile_generator = None
     
     def get_donor(self, donor_id: str) -> Optional[Dict[str, Any]]:
         """Get donor by ID (organization name)"""
@@ -244,3 +263,55 @@ class DonorService:
         except Exception as e:
             logger.error(f"Error searching donors: {e}")
             return []
+    
+    def generate_donor_profile(self, donor_name: str, export_to_docs: bool = True) -> Dict[str, Any]:
+        """Generate an AI-powered donor profile"""
+        if not self.profile_generator:
+            return {
+                "success": False,
+                "error": "Profile generator not available. Check AI model configuration."
+            }
+        
+        try:
+            # Use default profiles folder ID from environment or config
+            profiles_folder_id = "1Zrk26Mn0QtH9_9WYq4fPAaIdONOAIkcS"  # From original Colab code
+            
+            logger.info(f"Generating profile for: {donor_name}")
+            result = self.profile_generator.generate_donor_profile(
+                donor_name=donor_name,
+                export_to_docs=export_to_docs,
+                folder_id=profiles_folder_id
+            )
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error generating donor profile for {donor_name}: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+    
+    def get_profile_generator_status(self) -> Dict[str, Any]:
+        """Get status of the profile generator"""
+        if not self.profile_generator:
+            return {
+                "available": False,
+                "error": "Profile generator not initialized",
+                "models": {},
+                "google_docs": False
+            }
+        
+        try:
+            return {
+                "available": True,
+                "models": self.profile_generator.get_available_models(),
+                "google_docs": self.profile_generator.is_google_docs_available()
+            }
+        except Exception as e:
+            return {
+                "available": False,
+                "error": str(e),
+                "models": {},
+                "google_docs": False
+            }

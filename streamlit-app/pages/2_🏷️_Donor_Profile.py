@@ -39,9 +39,11 @@ def fallback_get_donor_profile(donor_id):
 # Import with multiple fallback strategies
 get_donors = fallback_get_donors
 get_donor_profile = fallback_get_donor_profile
+generate_donor_profile = None
+get_profile_generator_status = None
 
 try:
-    from lib.api import get_donors, get_donor_profile
+    from lib.api import get_donors, get_donor_profile, generate_donor_profile, get_profile_generator_status
     print("✅ Using lib.api imports")
 except ImportError as e:
     print(f"❌ Lib.api import failed: {e}")
@@ -91,21 +93,52 @@ def main():
     st.markdown("View and manage individual donor information")
     
     # Donor selection
-    st.subheader("Select Donor")
-    
-    try:
-        donors = get_donors()
-        if donors:
-            donor_names = [donor.get('name', 'Unknown') for donor in donors]
-            selected_donor = st.selectbox("Choose a donor:", donor_names)
-        else:
-            # Sample data
+    st.subheader("Select or Add Donor")
+
+    # Option to choose between existing or custom donor
+    input_mode = st.radio(
+        "Choose input method:",
+        ["Select from existing", "Enter custom donor"],
+        horizontal=True
+    )
+
+    selected_donor = None
+    custom_website = None
+
+    if input_mode == "Select from existing":
+        try:
+            donors = get_donors()
+            if donors:
+                donor_names = [donor.get('name', 'Unknown') for donor in donors]
+                selected_donor = st.selectbox("Choose a donor:", donor_names)
+            else:
+                # Sample data
+                donor_names = ["ABC Corporation", "XYZ Foundation", "Tech Startup Inc", "Local Business LLC"]
+                selected_donor = st.selectbox("Choose a donor:", donor_names)
+        except Exception as e:
+            st.error(f"Error loading donors: {str(e)}")
             donor_names = ["ABC Corporation", "XYZ Foundation", "Tech Startup Inc", "Local Business LLC"]
             selected_donor = st.selectbox("Choose a donor:", donor_names)
-    except Exception as e:
-        st.error(f"Error loading donors: {str(e)}")
-        donor_names = ["ABC Corporation", "XYZ Foundation", "Tech Startup Inc", "Local Business LLC"]
-        selected_donor = st.selectbox("Choose a donor:", donor_names)
+
+    else:  # Enter custom donor
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            selected_donor = st.text_input(
+                "Donor/Organization Name *",
+                placeholder="e.g., Ford Foundation, Gates Foundation, etc.",
+                help="Enter the full name of the donor organization or foundation"
+            )
+        with col2:
+            custom_website = st.text_input(
+                "Website (optional)",
+                placeholder="e.g., www.foundation.org",
+                help="If you know the website, this will improve the profile generation"
+            )
+
+        if selected_donor:
+            st.info(f"🎯 Ready to generate profile for: **{selected_donor}**")
+        else:
+            st.warning("Please enter a donor name to proceed")
     
     if selected_donor:
         st.markdown("---")
@@ -164,6 +197,144 @@ def main():
             st.checkbox("Email Updates", value=True, disabled=True)
             st.checkbox("Newsletter", value=True, disabled=True)
             st.checkbox("Event Invitations", value=False, disabled=True)
+    
+    # AI Profile Generation Section
+    st.markdown("---")
+    st.subheader("🤖 AI-Powered Profile Generation")
+    
+    # Check if profile generator is available
+    profile_status = None
+    if get_profile_generator_status:
+        try:
+            profile_status = get_profile_generator_status()
+        except Exception as e:
+            st.error(f"Error checking profile generator status: {e}")
+    
+    if profile_status and profile_status.get("available"):
+        st.success("✅ AI Profile Generator Available")
+        
+        # Show available models
+        models = profile_status.get("models", {})
+        if models:
+            model_info = []
+            for provider, info in models.items():
+                model_info.append(f"**{provider.title()}**: {', '.join(info.get('models', []))}")
+            st.info("Available models: " + " | ".join(model_info))
+        
+        # Google Docs status
+        if profile_status.get("google_docs"):
+            st.success("📄 Google Docs export enabled")
+        else:
+            st.warning("⚠️ Google Docs export not configured")
+        
+        # Profile generation controls
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            st.markdown("**Generate comprehensive donor profile with AI research and analysis**")
+            st.caption("This will research the organization online and create a detailed profile document.")
+        
+        with col2:
+            # Only show button if we have a donor name
+            can_generate = selected_donor and selected_donor.strip()
+
+            if st.button("🚀 Generate Profile", type="primary", disabled=not can_generate):
+                if not can_generate:
+                    st.error("Please enter a donor name first")
+                elif generate_donor_profile:
+                    # Show additional info for custom donors
+                    if custom_website:
+                        st.info(f"🌐 Using website hint: {custom_website}")
+
+                    with st.spinner(f"Generating AI profile for {selected_donor}..."):
+                        try:
+                            result = generate_donor_profile(selected_donor.strip(), export_to_docs=True)
+                            
+                            if result.get("success"):
+                                st.success("✅ Profile generated successfully!")
+                                
+                                # Show results
+                                if result.get("document_url"):
+                                    st.markdown(f"📄 **[View Profile Document]({result['document_url']})**")
+                                
+                                # Show profile preview
+                                if result.get("profile_content"):
+                                    with st.expander("📋 Profile Preview"):
+                                        st.text_area(
+                                            "Generated Profile",
+                                            value=result["profile_content"][:1000] + "..." if len(result["profile_content"]) > 1000 else result["profile_content"],
+                                            height=300,
+                                            disabled=True
+                                        )
+                                
+                                # Show generation details
+                                if result.get("steps"):
+                                    with st.expander("🔍 Generation Details"):
+                                        steps = result["steps"]
+
+                                        # Research step with enhanced info
+                                        if steps.get("research", {}).get("success"):
+                                            research_data = steps["research"].get("data", {})
+                                            services_used = research_data.get("services_used", [])
+                                            website_found = research_data.get("website_data", {}).get("url")
+
+                                            st.success("✅ Research completed")
+                                            if services_used:
+                                                st.info(f"🔍 Services used: {', '.join(services_used)}")
+                                            if website_found:
+                                                st.info(f"🌐 Website found: {website_found}")
+
+                                        # Generation step
+                                        if steps.get("generation", {}).get("success"):
+                                            model_used = steps["generation"].get("model_used", "Unknown")
+                                            st.success(f"✅ Profile generated using {model_used}")
+
+                                        # Evaluation step with detailed feedback
+                                        if steps.get("evaluation", {}).get("success"):
+                                            score = steps["evaluation"].get("score", "N/A")
+                                            evaluation_text = steps["evaluation"].get("evaluation", "")
+                                            st.success(f"✅ Quality evaluation: {score}/100")
+
+                                            if evaluation_text and "SCORE:" in evaluation_text:
+                                                # Extract feedback from evaluation
+                                                feedback_start = evaluation_text.find("SCORE:") + len(f"SCORE: {score}")
+                                                feedback = evaluation_text[feedback_start:].strip()
+                                                if feedback:
+                                                    with st.expander("📊 Quality Feedback"):
+                                                        st.text_area("AI Evaluation", feedback, height=150, disabled=True)
+
+                                        # Export step
+                                        if steps.get("export", {}).get("success"):
+                                            st.success("✅ Exported to Google Docs")
+                                        elif steps.get("export", {}).get("error"):
+                                            st.warning(f"⚠️ Export issue: {steps['export']['error']}")
+
+                                        # Search services status
+                                        research_data = steps.get("research", {}).get("data", {})
+                                        if research_data.get("services_status"):
+                                            with st.expander("🔧 Search Services Status"):
+                                                services_status = research_data["services_status"]
+                                                for service, status in services_status.items():
+                                                    if status.get("enabled"):
+                                                        quota_status = "💚 Active" if not status.get("quota_exhausted") else "🔴 Quota Exhausted"
+                                                        limit = status.get('free_limit', 'N/A')
+                                                        if limit == float('inf'):
+                                                            limit = "Unlimited"
+                                                        st.write(f"**{service.title()}**: {quota_status} (Priority: {status.get('priority', 'N/A')}, Limit: {limit}/month)")
+                                
+                            else:
+                                st.error(f"❌ Profile generation failed: {result.get('error', 'Unknown error')}")
+                                
+                        except Exception as e:
+                            st.error(f"❌ Error generating profile: {e}")
+                else:
+                    st.error("Profile generation function not available")
+    
+    else:
+        st.warning("⚠️ AI Profile Generator not available")
+        if profile_status and profile_status.get("error"):
+            st.error(f"Error: {profile_status['error']}")
+        st.info("To enable AI profile generation, configure AI models (Anthropic/OpenAI) and Google credentials.")
     
     # Action buttons
     st.markdown("---")

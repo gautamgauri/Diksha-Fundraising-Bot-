@@ -223,6 +223,74 @@ def get_donor(donor_id):
             "error": str(e)
         }), 500
 
+@app.route('/api/donor/generate-profile', methods=['POST'])
+def generate_donor_profile_endpoint():
+    """Generate an AI-powered donor profile"""
+    try:
+        if not donor_service:
+            return jsonify({
+                "success": False,
+                "error": "Donor service not available"
+            }), 503
+        
+        data = request.get_json()
+        if not data or 'donor_name' not in data:
+            return jsonify({
+                "success": False,
+                "error": "donor_name is required"
+            }), 400
+        
+        donor_name = data.get('donor_name')
+        export_to_docs = data.get('export_to_docs', True)
+        
+        logger.info(f"Generating profile for donor: {donor_name}")
+        
+        # Generate profile using the donor service
+        result = donor_service.generate_donor_profile(
+            donor_name=donor_name,
+            export_to_docs=export_to_docs
+        )
+        
+        if result.get("success"):
+            return jsonify(result)
+        else:
+            return jsonify(result), 500
+        
+    except Exception as e:
+        logger.error(f"Error generating donor profile: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/api/donor/profile-generator-status', methods=['GET'])
+def get_profile_generator_status_endpoint():
+    """Get the status of the profile generator"""
+    try:
+        if not donor_service:
+            return jsonify({
+                "success": False,
+                "error": "Donor service not available",
+                "available": False,
+                "models": {},
+                "google_docs": False
+            })
+        
+        # Get status from donor service
+        status = donor_service.get_profile_generator_status()
+        
+        return jsonify(status)
+        
+    except Exception as e:
+        logger.error(f"Error getting profile generator status: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "available": False,
+            "models": {},
+            "google_docs": False
+        })
+
 @app.route('/api/moveStage', methods=['POST'])
 def move_stage():
     """Update donor stage"""
