@@ -210,9 +210,91 @@ def main():
     
     st.markdown("---")
     
-    # Filters
-    st.subheader("🔍 Filters")
-    col1, col2, col3, col4 = st.columns(4)
+    # Enhanced Search Bar - Make it prominent
+    st.subheader("🔍 Search Pipeline")
+    
+    # Search input with clear button
+    col1, col2 = st.columns([4, 1])
+    with col1:
+        search_term = st.text_input(
+            "Search your fundraising pipeline:", 
+            placeholder="Search by organization, contact person, email, notes, sector, or assigned person...",
+            help="Search across all prospect fields including organization name, contact details, notes, and more",
+            key="main_search"
+        )
+    with col2:
+        st.markdown("<br>", unsafe_allow_html=True)  # Add some spacing
+        if st.button("🗑️ Clear Search", help="Clear the search field"):
+            st.session_state.main_search = ""
+            st.rerun()
+    
+    # Quick search suggestions if search term is provided
+    if search_term:
+        search_lower = search_term.lower()
+        if pipeline_data:
+            # Count matches across different fields
+            org_matches = len([d for d in pipeline_data if search_lower in d.get('organization_name', '').lower()])
+            contact_matches = len([d for d in pipeline_data if search_lower in d.get('contact_person', '').lower()])
+            email_matches = len([d for d in pipeline_data if search_lower in d.get('contact_email', '').lower()])
+            notes_matches = len([d for d in pipeline_data if search_lower in d.get('notes', '').lower()])
+            sector_matches = len([d for d in pipeline_data if search_lower in d.get('sector_tags', '').lower()])
+            assigned_matches = len([d for d in pipeline_data if search_lower in d.get('assigned_to', '').lower()])
+            
+            total_matches = len([d for d in pipeline_data if 
+                               search_lower in d.get('organization_name', '').lower() or
+                               search_lower in d.get('contact_person', '').lower() or
+                               search_lower in d.get('contact_email', '').lower() or
+                               search_lower in d.get('notes', '').lower() or
+                               search_lower in d.get('sector_tags', '').lower() or
+                               search_lower in d.get('assigned_to', '').lower()])
+            
+            if total_matches > 0:
+                match_details = []
+                if org_matches > 0: match_details.append(f"{org_matches} organizations")
+                if contact_matches > 0: match_details.append(f"{contact_matches} contacts")
+                if email_matches > 0: match_details.append(f"{email_matches} emails")
+                if notes_matches > 0: match_details.append(f"{notes_matches} notes")
+                if sector_matches > 0: match_details.append(f"{sector_matches} sectors")
+                if assigned_matches > 0: match_details.append(f"{assigned_matches} assigned")
+                
+                st.info(f"🎯 Found **{total_matches}** matches: {', '.join(match_details)}")
+            else:
+                st.warning(f"🔍 No matches found for '{search_term}'. Try a different search term.")
+    
+    # Quick Search Shortcuts
+    if not search_term:  # Only show shortcuts when no search is active
+        st.markdown("**🚀 Quick Search Shortcuts:**")
+        col1, col2, col3, col4, col5 = st.columns(5)
+        
+        with col1:
+            if st.button("🏢 High Value", help="Show prospects with expected amount > $50k"):
+                st.session_state.quick_search_filter = "high_value"
+                st.rerun()
+        
+        with col2:
+            if st.button("📄 Proposals", help="Show prospects with proposals sent"):
+                st.session_state.quick_search_filter = "proposals"
+                st.rerun()
+        
+        with col3:
+            if st.button("🤝 Active", help="Show actively engaged prospects"):
+                st.session_state.quick_search_filter = "active"
+                st.rerun()
+        
+        with col4:
+            if st.button("⚠️ Overdue", help="Show prospects with overdue actions"):
+                st.session_state.quick_search_filter = "overdue"
+                st.rerun()
+        
+        with col5:
+            if st.button("🔄 Clear All", help="Clear all filters"):
+                if hasattr(st.session_state, 'quick_search_filter'):
+                    del st.session_state.quick_search_filter
+                st.rerun()
+    
+    # Filters Section
+    st.subheader("🔧 Additional Filters")
+    col1, col2, col3 = st.columns(3)
     
     # Get unique values for filters from real data
     if pipeline_data and len(pipeline_data) > 0:
@@ -225,16 +307,13 @@ def main():
         assigned_to = ["All", "John Doe", "Sarah Johnson", "Mike Wilson"]
     
     with col1:
-        stage_filter = st.selectbox("Stage:", stages)
+        stage_filter = st.selectbox("Filter by Stage:", stages)
     
     with col2:
-        sector_filter = st.selectbox("Sector:", sectors)
+        sector_filter = st.selectbox("Filter by Sector:", sectors)
     
     with col3:
-        assigned_filter = st.selectbox("Assigned To:", assigned_to)
-    
-    with col4:
-        search_term = st.text_input("🔍 Search:", placeholder="Organization name, contact, email...")
+        assigned_filter = st.selectbox("Filter by Assigned:", assigned_to)
     
     # Pipeline data table
     st.subheader("📋 Pipeline Overview")
@@ -258,22 +337,62 @@ def main():
                 if assigned_filter != "All":
                     filtered_data = [d for d in filtered_data if d.get('assigned_to') == assigned_filter]
                 
-                # Search filter
+                # Enhanced search filter - search across all relevant fields
                 if search_term:
                     search_lower = search_term.lower()
                     filtered_data = [d for d in filtered_data if 
                                    search_lower in d.get('organization_name', '').lower() or
                                    search_lower in d.get('contact_person', '').lower() or
-                                   search_lower in d.get('contact_email', '').lower()]
+                                   search_lower in d.get('contact_email', '').lower() or
+                                   search_lower in d.get('notes', '').lower() or
+                                   search_lower in d.get('sector_tags', '').lower() or
+                                   search_lower in d.get('assigned_to', '').lower() or
+                                   search_lower in d.get('contact_role', '').lower()]
+                
+                # Quick search filters
+                if hasattr(st.session_state, 'quick_search_filter'):
+                    quick_filter = st.session_state.quick_search_filter
+                    
+                    if quick_filter == "high_value":
+                        filtered_data = [d for d in filtered_data if d.get('expected_amount', 0) > 50000]
+                        st.info("🏢 Showing high-value prospects (>$50k expected amount)")
+                    
+                    elif quick_filter == "proposals":
+                        filtered_data = [d for d in filtered_data if d.get('current_stage') == 'Proposal Sent']
+                        st.info("📄 Showing prospects with proposals sent")
+                    
+                    elif quick_filter == "active":
+                        active_stages = ['Engaged', 'In Prospect List', 'Initial Outreach']
+                        filtered_data = [d for d in filtered_data if d.get('current_stage') in active_stages]
+                        st.info("🤝 Showing actively engaged prospects")
+                    
+                    elif quick_filter == "overdue":
+                        from datetime import datetime
+                        today = datetime.now().date()
+                        filtered_data = [d for d in filtered_data if 
+                                       d.get('next_action_date') and 
+                                       pd.to_datetime(d.get('next_action_date')).date() < today]
+                        st.warning("⚠️ Showing prospects with overdue actions")
                 
                 # Display data in Kanban style
                 if filtered_data:
                     # Create Kanban-style display
                     display_kanban_pipeline(filtered_data)
                     
-                    # Show filter summary
-                    if any([stage_filter != "All", sector_filter != "All", assigned_filter != "All", search_term]):
-                        st.info(f"📊 Showing {len(filtered_data)} of {len(pipeline_data)} prospects")
+                    # Show comprehensive filter summary
+                    active_filters = []
+                    if stage_filter != "All": active_filters.append(f"Stage: {stage_filter}")
+                    if sector_filter != "All": active_filters.append(f"Sector: {sector_filter}")
+                    if assigned_filter != "All": active_filters.append(f"Assigned: {assigned_filter}")
+                    if search_term: active_filters.append(f"Search: '{search_term}'")
+                    if hasattr(st.session_state, 'quick_search_filter'): 
+                        active_filters.append(f"Quick Filter: {st.session_state.quick_search_filter.replace('_', ' ').title()}")
+                    
+                    if active_filters or len(filtered_data) != len(pipeline_data):
+                        filter_text = f"📊 Showing **{len(filtered_data)}** of **{len(pipeline_data)}** prospects"
+                        if active_filters:
+                            filter_text += f" | Active filters: {', '.join(active_filters)}"
+                        st.info(filter_text)
                 else:
                     st.info("No data matches the selected filters.")
             else:
