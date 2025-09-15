@@ -39,17 +39,47 @@ class ModelManager:
         if anthropic_key and self._validate_api_key(anthropic_key):
             try:
                 import anthropic
-                # Initialize with explicit parameters to avoid proxy issues
-                client = anthropic.Anthropic(
-                    api_key=anthropic_key,
-                    timeout=30.0
-                )
-                self.models['anthropic'] = {
-                    'client': client,
-                    'models': ['claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307'],
-                    'type': 'anthropic'
-                }
-                self.logger.info("Anthropic models loaded successfully")
+                # Try different initialization approaches to handle proxy issues
+                client = None
+                
+                # Approach 1: Basic initialization
+                try:
+                    client = anthropic.Anthropic(api_key=anthropic_key)
+                    self.logger.info("Anthropic client initialized successfully (basic)")
+                except TypeError as te:
+                    if "proxies" in str(te):
+                        self.logger.warning("Proxy parameter issue detected, trying alternative initialization")
+                        # Approach 2: Force clean environment
+                        import os
+                        old_env = {}
+                        proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
+                        for var in proxy_vars:
+                            if var in os.environ:
+                                old_env[var] = os.environ[var]
+                                del os.environ[var]
+                        
+                        try:
+                            client = anthropic.Anthropic(api_key=anthropic_key)
+                            self.logger.info("Anthropic client initialized successfully (clean env)")
+                        except Exception as e2:
+                            self.logger.error(f"Alternative initialization failed: {e2}")
+                        finally:
+                            # Restore environment variables
+                            for var, value in old_env.items():
+                                os.environ[var] = value
+                    else:
+                        raise te
+                
+                if client:
+                    self.models['anthropic'] = {
+                        'client': client,
+                        'models': ['claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307'],
+                        'type': 'anthropic'
+                    }
+                    self.logger.info("Anthropic models loaded successfully")
+                else:
+                    self.logger.error("Failed to initialize Anthropic client - no fallback succeeded")
+                    
             except ImportError:
                 self.logger.warning("Anthropic not available - install anthropic package")
             except Exception as e:
