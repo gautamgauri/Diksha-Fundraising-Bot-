@@ -39,7 +39,11 @@ class ModelManager:
         if anthropic_key and self._validate_api_key(anthropic_key):
             try:
                 import anthropic
-                client = anthropic.Anthropic(api_key=anthropic_key)
+                # Initialize with explicit parameters to avoid proxy issues
+                client = anthropic.Anthropic(
+                    api_key=anthropic_key,
+                    timeout=30.0
+                )
                 self.models['anthropic'] = {
                     'client': client,
                     'models': ['claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307'],
