@@ -167,7 +167,7 @@ def main():
                 }
             ]
             
-        for template in sample_templates:
+            for template in sample_templates:
                 with st.expander(f"📧 {template['name']}"):
                     st.write(f"**Category:** {template['category']}")
                     st.write(f"**Description:** {template['description']}")
