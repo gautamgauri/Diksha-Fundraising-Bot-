@@ -50,7 +50,6 @@ class ModelManager:
                     if "proxies" in str(te):
                         self.logger.warning("Proxy parameter issue detected, trying alternative initialization")
                         # Approach 2: Force clean environment
-                        import os
                         old_env = {}
                         proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
                         for var in proxy_vars:
