@@ -865,7 +865,32 @@ Diksha Foundation Team"""
                 logger.warning("Claude API key not found, falling back to template system")
                 return self._generate_custom_email(template_type, donor_data)
             
-            client = anthropic.Anthropic(api_key=self.claude_api_key)
+            # Initialize Anthropic client with proxy handling
+            try:
+                client = anthropic.Anthropic(api_key=self.claude_api_key)
+            except TypeError as te:
+                if "proxies" in str(te):
+                    logger.warning("Proxy parameter issue detected in email generator, trying clean environment")
+                    import os
+                    old_env = {}
+                    proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
+                    for var in proxy_vars:
+                        if var in os.environ:
+                            old_env[var] = os.environ[var]
+                            del os.environ[var]
+                    
+                    try:
+                        client = anthropic.Anthropic(api_key=self.claude_api_key)
+                        logger.info("Anthropic client initialized successfully in email generator (clean env)")
+                    except Exception as e2:
+                        logger.error(f"Email generator Anthropic initialization failed: {e2}")
+                        return self._generate_custom_email(template_type, donor_data)
+                    finally:
+                        # Restore environment variables
+                        for var, value in old_env.items():
+                            os.environ[var] = value
+                else:
+                    raise te
             
             # Try to get actual template content from Drive first
             drive_template_content = self.get_template_content(template_type)
