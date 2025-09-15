@@ -1384,7 +1384,6 @@ def show_pipeline_analytics():
         st.info(f"🎯 **Success Rate:** {win_rate:.1f}% win rate from {total_closed} closed deals")
     
     else:
-        
         st.warning("⚠️ **No Pipeline Data Available**")
         st.info("Connect to your Google Sheets or add some prospects to see analytics.")
         
