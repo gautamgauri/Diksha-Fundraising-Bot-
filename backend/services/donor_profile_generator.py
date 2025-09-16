@@ -1125,36 +1125,61 @@ Make sure to:
                 self.model_manager.logger.info("Anthropic client initialized successfully with basic method")
                 anthropic_config['client'] = client
                 return client
+            except TypeError as te:
+                if "proxies" in str(te):
+                    self.model_manager.logger.warning("Proxy parameter issue detected, trying clean environment")
+                    # Temporarily clear proxy environment variables that may cause issues
+                    import os
+                    old_env = {}
+                    proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
+                    for var in proxy_vars:
+                        if var in os.environ:
+                            old_env[var] = os.environ[var]
+                            del os.environ[var]
+
+                    try:
+                        client = anthropic.Anthropic(api_key=api_key)
+                        self.model_manager.logger.info("Anthropic client initialized successfully (clean env)")
+                        anthropic_config['client'] = client
+                        return client
+                    except Exception as e_clean:
+                        self.model_manager.logger.warning(f"Clean environment initialization failed: {e_clean}")
+                    finally:
+                        # Restore environment variables
+                        for var, value in old_env.items():
+                            os.environ[var] = value
+
+                self.model_manager.logger.warning(f"Basic Anthropic initialization failed with TypeError: {te}")
             except Exception as e1:
                 self.model_manager.logger.warning(f"Basic Anthropic initialization failed: {e1}")
 
-                # Strategy 2: Try with explicit timeout settings
+            # Strategy 2: Try with explicit timeout settings
+            try:
+                client = anthropic.Anthropic(
+                    api_key=api_key,
+                    timeout=30.0
+                )
+                self.model_manager.logger.info("Anthropic client initialized successfully with timeout")
+                anthropic_config['client'] = client
+                return client
+            except Exception as e2:
+                self.model_manager.logger.warning(f"Anthropic initialization with timeout failed: {e2}")
+
+                # Strategy 3: Try with explicit base URL
                 try:
                     client = anthropic.Anthropic(
                         api_key=api_key,
-                        timeout=30.0
+                        base_url="https://api.anthropic.com"
                     )
-                    self.model_manager.logger.info("Anthropic client initialized successfully with timeout")
+                    self.model_manager.logger.info("Anthropic client initialized successfully with explicit base URL")
                     anthropic_config['client'] = client
                     return client
-                except Exception as e2:
-                    self.model_manager.logger.warning(f"Anthropic initialization with timeout failed: {e2}")
-
-                    # Strategy 3: Try with explicit base URL
-                    try:
-                        client = anthropic.Anthropic(
-                            api_key=api_key,
-                            base_url="https://api.anthropic.com"
-                        )
-                        self.model_manager.logger.info("Anthropic client initialized successfully with explicit base URL")
-                        anthropic_config['client'] = client
-                        return client
-                    except Exception as e3:
-                        self.model_manager.logger.error(f"All Anthropic initialization strategies failed:")
-                        self.model_manager.logger.error(f"  Strategy 1 (basic): {e1}")
-                        self.model_manager.logger.error(f"  Strategy 2 (timeout): {e2}")
-                        self.model_manager.logger.error(f"  Strategy 3 (explicit URL): {e3}")
-                        return None
+                except Exception as e3:
+                    self.model_manager.logger.error(f"All Anthropic initialization strategies failed:")
+                    self.model_manager.logger.error(f"  Strategy 1 (basic): {e1}")
+                    self.model_manager.logger.error(f"  Strategy 2 (timeout): {e2}")
+                    self.model_manager.logger.error(f"  Strategy 3 (explicit URL): {e3}")
+                    return None
 
         except ImportError:
             self.model_manager.logger.error("Anthropic package not available - run: pip install anthropic")
