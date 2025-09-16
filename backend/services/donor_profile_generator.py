@@ -316,8 +316,11 @@ class DataCollector:
         return ""
 
     def _search_with_serpapi(self, query: str) -> str:
-        """Search using SerpAPI"""
+        """Search using SerpAPI with quota tracking"""
         try:
+            # Log search attempt for quota monitoring
+            self.logger.info(f"🔍 Using SerpAPI for search: '{query[:50]}{'...' if len(query) > 50 else ''}'")
+
             url = "https://serpapi.com/search"
             params = {
                 'q': query,
@@ -329,28 +332,43 @@ class DataCollector:
 
             if response.status_code == 200:
                 data = response.json()
+
+                # Log search info for quota monitoring
+                search_info = data.get('search_information', {})
+                self.logger.info(f"✅ SerpAPI search successful - Time: {search_info.get('time_taken_displayed', 'N/A')}")
+
                 if 'error' in data:
                     error_msg = data['error']
+                    self.logger.warning(f"⚠️ SerpAPI returned error: {error_msg}")
                     if self._is_quota_error('serpapi', error_msg):
                         raise Exception(f"SerpAPI quota exhausted: {error_msg}")
+
+                results_found = len(data.get('organic_results', []))
+                self.logger.info(f"📊 SerpAPI found {results_found} organic results")
 
                 for result in data.get('organic_results', []):
                     link = result.get('link', '')
                     if self._is_foundation_url(link):
+                        self.logger.info(f"🎯 Found foundation URL via SerpAPI: {link}")
                         return link
             else:
+                self.logger.error(f"❌ SerpAPI HTTP error: {response.status_code}")
                 if response.status_code in [429, 403, 402]:
                     raise Exception(f"SerpAPI quota error: HTTP {response.status_code}")
 
         except Exception as e:
             if self._is_quota_error('serpapi', str(e)):
+                self.logger.error(f"🚫 SerpAPI QUOTA EXHAUSTED: {str(e)}")
                 raise
-            self.logger.error(f"SerpAPI search failed: {e}")
+            self.logger.error(f"❌ SerpAPI search failed: {e}")
         return ""
 
     def _search_with_searchapi(self, query: str) -> str:
-        """Search using SearchAPI"""
+        """Search using SearchAPI with quota tracking"""
         try:
+            # Log search attempt for quota monitoring
+            self.logger.info(f"🔍 Using SearchAPI for search: '{query[:50]}{'...' if len(query) > 50 else ''}'")
+
             url = "https://www.searchapi.io/api/v1/search"
             params = {
                 'q': query,
@@ -362,18 +380,24 @@ class DataCollector:
 
             if response.status_code == 200:
                 data = response.json()
+                results_found = len(data.get('organic_results', []))
+                self.logger.info(f"✅ SearchAPI search successful - Found {results_found} results")
+
                 for result in data.get('organic_results', []):
                     link = result.get('link', '')
                     if self._is_foundation_url(link):
+                        self.logger.info(f"🎯 Found foundation URL via SearchAPI: {link}")
                         return link
             else:
+                self.logger.error(f"❌ SearchAPI HTTP error: {response.status_code}")
                 if response.status_code in [429, 403, 402]:
                     raise Exception(f"SearchAPI quota error: HTTP {response.status_code}")
 
         except Exception as e:
             if self._is_quota_error('searchapi', str(e)):
+                self.logger.error(f"🚫 SearchAPI QUOTA EXHAUSTED: {str(e)}")
                 raise
-            self.logger.error(f"SearchAPI search failed: {e}")
+            self.logger.error(f"❌ SearchAPI search failed: {e}")
         return ""
 
     def _search_with_rapidapi(self, query: str) -> str:
@@ -648,7 +672,7 @@ class DataCollector:
             }
             self.logger.warning("⚠️ Bing Search API configured but DEPRECATED - Microsoft is retiring this service")
 
-        # SerpAPI - 100 free searches/month (highest quality)
+        # SerpAPI - 250 free searches/month (highest quality)
         serpapi_key = os.getenv("SERPAPI_KEY")
         if serpapi_key and self._validate_api_key(serpapi_key):
             services['serpapi'] = {
@@ -656,10 +680,10 @@ class DataCollector:
                 'enabled': True,
                 'quota_exhausted': False,
                 'priority': 4,  # Higher priority due to quality
-                'free_limit': 100,
+                'free_limit': 250,  # Updated to correct free tier limit
                 'error_codes': ['quota_exceeded', 'insufficient_credits']
             }
-            self.logger.info("🚀 SerpAPI configured (100 free searches/month)")
+            self.logger.info("🚀 SerpAPI configured (250 free searches/month)")
 
         # SearchAPI - 100 free searches/month
         searchapi_key = os.getenv("SEARCHAPI_KEY")
