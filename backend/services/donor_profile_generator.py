@@ -46,22 +46,17 @@ class ModelManager:
             }
             self.logger.info("Anthropic API key configured - client will be initialized when needed")
 
-        # OpenAI models
+        # OpenAI models - use lazy initialization like Anthropic
         openai_key = os.getenv("OPENAI_API_KEY")
         if openai_key and self._validate_api_key(openai_key):
-            try:
-                import openai
-                client = openai.OpenAI(api_key=openai_key)
-                self.models['openai'] = {
-                    'client': client,
-                    'models': ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo'],
-                    'type': 'openai'
-                }
-                self.logger.info("✅ OpenAI models loaded successfully")
-            except ImportError:
-                self.logger.warning("OpenAI not available - install openai package")
-            except Exception as e:
-                self.logger.error(f"Failed to initialize OpenAI client: {e}")
+            # Store the key for lazy initialization instead of creating client now
+            self.models['openai'] = {
+                'api_key': openai_key,
+                'models': ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo'],
+                'type': 'openai',
+                'client': None  # Will be initialized when needed
+            }
+            self.logger.info("OpenAI API key configured - client will be initialized when needed")
         else:
             self.logger.info("OpenAI API key not configured")
 
@@ -82,25 +77,17 @@ class ModelManager:
             except Exception as e:
                 self.logger.error(f"Failed to initialize Gemini client: {e}")
 
-        # Deepseek models
+        # Deepseek models - use lazy initialization like OpenAI
         deepseek_key = os.getenv("DEEPSEEK_API_KEY")
         if deepseek_key and self._validate_api_key(deepseek_key):
-            try:
-                import openai  # Deepseek uses OpenAI-compatible API
-                client = openai.OpenAI(
-                    api_key=deepseek_key,
-                    base_url="https://api.deepseek.com"
-                )
-                self.models['deepseek'] = {
-                    'client': client,
-                    'models': ['deepseek-chat', 'deepseek-coder'],
-                    'type': 'deepseek'
-                }
-                self.logger.info("Deepseek models loaded successfully")
-            except ImportError:
-                self.logger.warning("OpenAI package required for Deepseek - install openai package")
-            except Exception as e:
-                self.logger.error(f"Failed to initialize Deepseek client: {e}")
+            # Store the key for lazy initialization instead of creating client now
+            self.models['deepseek'] = {
+                'api_key': deepseek_key,
+                'models': ['deepseek-chat', 'deepseek-coder'],
+                'type': 'deepseek',
+                'client': None  # Will be initialized when needed
+            }
+            self.logger.info("Deepseek API key configured - client will be initialized when needed")
 
     def _validate_api_key(self, api_key: str) -> bool:
         """Basic API key validation"""
@@ -1192,9 +1179,84 @@ Make sure to:
             self.model_manager.logger.error(f"Unexpected error initializing Anthropic client: {e}")
             return None
 
+    def _get_openai_client(self):
+        """Get or create OpenAI client with lazy initialization and robust error handling"""
+        if 'openai' not in self.model_manager.models:
+            return None
+
+        openai_config = self.model_manager.models['openai']
+
+        # Return existing client if already initialized
+        if openai_config.get('client'):
+            return openai_config['client']
+
+        # Initialize client now with proxy-aware environment cleanup
+        try:
+            import openai
+            import os
+            api_key = openai_config['api_key']
+
+            # Proactively clean proxy environment variables that cause issues with openai package
+            self.model_manager.logger.info("Cleaning proxy environment variables for OpenAI client compatibility")
+            old_env = {}
+            proxy_vars = [
+                'HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy',
+                'ALL_PROXY', 'all_proxy', 'NO_PROXY', 'no_proxy',
+                'SOCKS_PROXY', 'socks_proxy'
+            ]
+            for var in proxy_vars:
+                if var in os.environ:
+                    old_env[var] = os.environ[var]
+                    del os.environ[var]
+
+            try:
+                # Strategy 1: Direct initialization with minimal parameters
+                try:
+                    client = openai.OpenAI(api_key=api_key)
+                    self.model_manager.logger.info("✅ OpenAI client initialized successfully (direct)")
+                    openai_config['client'] = client
+                    return client
+                except Exception as e1:
+                    self.model_manager.logger.warning(f"OpenAI direct initialization failed: {e1}")
+
+                # Strategy 2: With explicit timeout
+                try:
+                    client = openai.OpenAI(
+                        api_key=api_key,
+                        timeout=30.0
+                    )
+                    self.model_manager.logger.info("✅ OpenAI client initialized with explicit timeout")
+                    openai_config['client'] = client
+                    return client
+                except Exception as e2:
+                    self.model_manager.logger.warning(f"OpenAI timeout initialization failed: {e2}")
+
+                # If all strategies fail, log the errors
+                self.model_manager.logger.error("All OpenAI client initialization strategies failed:")
+                self.model_manager.logger.error(f"  Direct: {e1}")
+                self.model_manager.logger.error(f"  Timeout: {e2}")
+                return None
+
+            finally:
+                # Always restore environment variables
+                for var, value in old_env.items():
+                    os.environ[var] = value
+                if old_env:
+                    self.model_manager.logger.info(f"Restored {len(old_env)} proxy environment variables")
+
+        except ImportError:
+            self.model_manager.logger.error("OpenAI package not available - run: pip install openai")
+            return None
+        except Exception as e:
+            self.model_manager.logger.error(f"Unexpected error initializing OpenAI client: {e}")
+            return None
+
     def _generate_with_openai(self, model: str, prompt: str) -> str:
         """Generate profile using OpenAI GPT"""
-        client = self.model_manager.models['openai']['client']
+        # Lazy initialization of OpenAI client
+        client = self._get_openai_client()
+        if not client:
+            raise Exception("Failed to initialize OpenAI client")
         
         response = client.chat.completions.create(
             model=model,
@@ -1214,9 +1276,64 @@ Make sure to:
 
         return response.text
 
+    def _get_deepseek_client(self):
+        """Get or create Deepseek client with lazy initialization and robust error handling"""
+        if 'deepseek' not in self.model_manager.models:
+            return None
+
+        deepseek_config = self.model_manager.models['deepseek']
+
+        # Return existing client if already initialized
+        if deepseek_config.get('client'):
+            return deepseek_config['client']
+
+        # Initialize client now with proxy-aware environment cleanup
+        try:
+            import openai  # Deepseek uses OpenAI-compatible API
+            import os
+            api_key = deepseek_config['api_key']
+
+            # Proactively clean proxy environment variables that cause issues with openai package
+            self.model_manager.logger.info("Cleaning proxy environment variables for Deepseek client compatibility")
+            old_env = {}
+            proxy_vars = [
+                'HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy',
+                'ALL_PROXY', 'all_proxy', 'NO_PROXY', 'no_proxy',
+                'SOCKS_PROXY', 'socks_proxy'
+            ]
+            for var in proxy_vars:
+                if var in os.environ:
+                    old_env[var] = os.environ[var]
+                    del os.environ[var]
+
+            try:
+                client = openai.OpenAI(
+                    api_key=api_key,
+                    base_url="https://api.deepseek.com"
+                )
+                self.model_manager.logger.info("✅ Deepseek client initialized successfully")
+                deepseek_config['client'] = client
+                return client
+            finally:
+                # Always restore environment variables
+                for var, value in old_env.items():
+                    os.environ[var] = value
+                if old_env:
+                    self.model_manager.logger.info(f"Restored {len(old_env)} proxy environment variables")
+
+        except ImportError:
+            self.model_manager.logger.error("OpenAI package required for Deepseek - run: pip install openai")
+            return None
+        except Exception as e:
+            self.model_manager.logger.error(f"Unexpected error initializing Deepseek client: {e}")
+            return None
+
     def _generate_with_deepseek(self, model: str, prompt: str) -> str:
         """Generate profile using Deepseek"""
-        client = self.model_manager.models['deepseek']['client']
+        # Lazy initialization of Deepseek client
+        client = self._get_deepseek_client()
+        if not client:
+            raise Exception("Failed to initialize Deepseek client")
 
         response = client.chat.completions.create(
             model=model,
@@ -1334,6 +1451,49 @@ Format: Start with "SCORE: [number]" then provide detailed feedback.
             self.model_manager.logger.error(f"ProfileEvaluator Anthropic client init failed: {e}")
             return None
 
+    def _get_openai_client(self):
+        """Get or create OpenAI client - reuse ProfileGenerator's approach"""
+        # Use the same client from the model manager
+        if 'openai' not in self.model_manager.models:
+            return None
+
+        openai_config = self.model_manager.models['openai']
+
+        # Return existing client if already initialized
+        if openai_config.get('client'):
+            return openai_config['client']
+
+        # Initialize using the same method as ProfileGenerator
+        try:
+            import openai
+            import os
+            api_key = openai_config['api_key']
+
+            # Use same proxy cleanup approach
+            old_env = {}
+            proxy_vars = [
+                'HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy',
+                'ALL_PROXY', 'all_proxy', 'NO_PROXY', 'no_proxy',
+                'SOCKS_PROXY', 'socks_proxy'
+            ]
+            for var in proxy_vars:
+                if var in os.environ:
+                    old_env[var] = os.environ[var]
+                    del os.environ[var]
+
+            try:
+                client = openai.OpenAI(api_key=api_key)
+                openai_config['client'] = client
+                return client
+            finally:
+                # Restore environment variables
+                for var, value in old_env.items():
+                    os.environ[var] = value
+
+        except Exception as e:
+            self.model_manager.logger.error(f"ProfileEvaluator OpenAI client init failed: {e}")
+            return None
+
     def _evaluate_with_anthropic(self, model: str, prompt: str) -> str:
         """Evaluate using Anthropic Claude"""
         # Lazy initialization of Anthropic client
@@ -1352,7 +1512,10 @@ Format: Start with "SCORE: [number]" then provide detailed feedback.
     
     def _evaluate_with_openai(self, model: str, prompt: str) -> str:
         """Evaluate using OpenAI GPT"""
-        client = self.model_manager.models['openai']['client']
+        # Lazy initialization of OpenAI client
+        client = self._get_openai_client()
+        if not client:
+            raise Exception("Failed to initialize OpenAI client")
         
         response = client.chat.completions.create(
             model=model,
