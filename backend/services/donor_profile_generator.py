@@ -57,7 +57,7 @@ class ModelManager:
                     'models': ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo'],
                     'type': 'openai'
                 }
-                self.logger.info("OpenAI models loaded successfully")
+                self.logger.info("✅ OpenAI models loaded successfully")
             except ImportError:
                 self.logger.warning("OpenAI not available - install openai package")
             except Exception as e:
