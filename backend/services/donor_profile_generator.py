@@ -1134,44 +1134,48 @@ Make sure to:
                     del os.environ[var]
 
             try:
-                # Strategy 1: Basic initialization (with clean environment)
+                # Strategy 1: Direct initialization with minimal parameters
                 try:
+                    # Use only the most essential parameters to avoid conflicts
                     client = anthropic.Anthropic(api_key=api_key)
-                    self.model_manager.logger.info("✅ Anthropic client initialized successfully")
+                    self.model_manager.logger.info("✅ Anthropic client initialized successfully (direct)")
                     anthropic_config['client'] = client
                     return client
                 except Exception as e1:
-                    self.model_manager.logger.warning(f"Basic initialization failed: {e1}")
+                    self.model_manager.logger.warning(f"Direct initialization failed: {e1}")
 
-                # Strategy 2: Try with explicit timeout
+                # Strategy 2: Explicit minimal configuration
                 try:
                     client = anthropic.Anthropic(
                         api_key=api_key,
-                        timeout=30.0
+                        timeout=httpx.Timeout(30.0) if 'httpx' in str(type(anthropic.Anthropic)) else 30.0
                     )
-                    self.model_manager.logger.info("✅ Anthropic client initialized with timeout")
+                    self.model_manager.logger.info("✅ Anthropic client initialized with explicit timeout")
                     anthropic_config['client'] = client
                     return client
                 except Exception as e2:
-                    self.model_manager.logger.warning(f"Timeout initialization failed: {e2}")
+                    self.model_manager.logger.warning(f"Explicit timeout initialization failed: {e2}")
 
-                # Strategy 3: Try with explicit base URL
+                # Strategy 3: Force clean initialization
                 try:
+                    # Try to bypass any potential proxy or transport layer issues
                     client = anthropic.Anthropic(
                         api_key=api_key,
-                        base_url="https://api.anthropic.com"
+                        base_url="https://api.anthropic.com",
+                        timeout=30.0
                     )
-                    self.model_manager.logger.info("✅ Anthropic client initialized with explicit URL")
+                    self.model_manager.logger.info("✅ Anthropic client initialized with clean config")
                     anthropic_config['client'] = client
                     return client
                 except Exception as e3:
-                    self.model_manager.logger.warning(f"Explicit URL initialization failed: {e3}")
+                    self.model_manager.logger.warning(f"Clean config initialization failed: {e3}")
 
-                # All strategies failed
+                # All strategies failed - log detailed information
                 self.model_manager.logger.error("❌ All Anthropic initialization strategies failed:")
-                self.model_manager.logger.error(f"  Basic: {e1}")
+                self.model_manager.logger.error(f"  Direct: {e1}")
                 self.model_manager.logger.error(f"  Timeout: {e2}")
-                self.model_manager.logger.error(f"  Explicit URL: {e3}")
+                self.model_manager.logger.error(f"  Clean: {e3}")
+                self.model_manager.logger.error(f"  anthropic package version: {getattr(anthropic, '__version__', 'unknown')}")
                 return None
 
             finally:
