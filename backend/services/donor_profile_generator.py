@@ -1802,12 +1802,23 @@ class DonorProfileService:
             # Step 4: Export to Google Docs and PDF
             if export_to_docs and self.docs_exporter:
                 self.logger.info("Step 4: Exporting to Google Docs...")
-                export_result = self.docs_exporter.create_profile_document(
-                    donor_name, profile_content, folder_id
-                )
-                results["steps"]["export"] = export_result
+                try:
+                    export_result = self.docs_exporter.create_profile_document(
+                        donor_name, profile_content, folder_id
+                    )
+                    results["steps"]["export"] = export_result
+                except Exception as e:
+                    # Handle Google Docs permission errors gracefully
+                    error_msg = str(e)
+                    self.logger.warning(f"Google Docs export failed: {error_msg}")
+                    export_result = {
+                        "success": False,
+                        "error": f"Google Docs export failed: {error_msg}",
+                        "note": "Profile generated successfully, but document export failed due to permissions"
+                    }
+                    results["steps"]["export"] = export_result
 
-                if export_result["success"]:
+                if export_result.get("success", False):
                     results["document_url"] = export_result["document_url"]
                     results["document_id"] = export_result["document_id"]
                     
