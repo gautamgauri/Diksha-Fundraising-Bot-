@@ -159,7 +159,11 @@ class DataCollector:
 
         # Initialize search services with quota tracking
         self.search_services = self._init_search_services()
-    
+
+    def _validate_api_key(self, api_key: str) -> bool:
+        """Basic API key validation"""
+        return api_key and len(api_key.strip()) > 10 and not api_key.startswith('your-')
+
     def get_foundation_website(self, donor_name: str) -> str:
         """Get foundation website URL using smart service fallback"""
         search_queries = [
