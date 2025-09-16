@@ -267,7 +267,7 @@ def main():
         col1, col2, col3, col4, col5 = st.columns(5)
         
         with col1:
-            if st.button("🏢 High Value", help="Show prospects with expected amount > $50k"):
+            if st.button("🏢 High Value", help="Show prospects with expected amount > ₹50L"):
                 st.session_state.quick_search_filter = "high_value"
                 st.rerun()
         
@@ -354,8 +354,8 @@ def main():
                     quick_filter = st.session_state.quick_search_filter
                     
                     if quick_filter == "high_value":
-                        filtered_data = [d for d in filtered_data if d.get('expected_amount', 0) > 50000]
-                        st.info("🏢 Showing high-value prospects (>$50k expected amount)")
+                        filtered_data = [d for d in filtered_data if d.get('expected_amount', 0) > 5000000]  # ₹50L
+                        st.info("🏢 Showing high-value prospects (>₹50L expected amount)")
                     
                     elif quick_filter == "proposals":
                         filtered_data = [d for d in filtered_data if d.get('current_stage') == 'Proposal Sent']
@@ -544,9 +544,9 @@ def display_kanban_pipeline(data):
             with col3:
                 if stage_count > 0:
                     total_value = sum([d.get('expected_amount', 0) for d in donors_in_stage])
-                    st.metric("Total Value", f"${total_value:,.0f}")
+                    st.metric("Total Value", f"₹{total_value:,.0f}")
                 else:
-                    st.metric("Total Value", "$0")
+                    st.metric("Total Value", "₹0")
             
             st.markdown("---")
             
@@ -596,7 +596,7 @@ def display_donor_card(donor, index, current_stage):
         
         col1, col2 = st.columns(2)
         with col1:
-            st.markdown(f"💰 **Amount:** ${expected_amount:,}")
+            st.markdown(f"💰 **Amount:** ₹{expected_amount:,}")
         with col2:
             st.markdown(f"📊 **Probability:** {probability}%")
         
@@ -651,7 +651,7 @@ def display_sample_kanban_pipeline():
             "contact_email": "jane@abc.com",
             "contact_role": "CFO",
             "probability": 25,
-            "expected_amount": 50000,
+            "expected_amount": 5000000,  # ₹50L
             "next_action": "Send introduction email",
             "next_action_date": "2024-01-15",
             "last_contact_date": "2024-01-10",
@@ -667,7 +667,7 @@ def display_sample_kanban_pipeline():
             "contact_email": "mike@xyz.org",
             "contact_role": "Program Director",
             "probability": 60,
-            "expected_amount": 100000,
+            "expected_amount": 10000000,  # ₹1Cr
             "next_action": "Follow up on proposal",
             "next_action_date": "2024-01-20",
             "last_contact_date": "2024-01-12",
@@ -683,7 +683,7 @@ def display_sample_kanban_pipeline():
             "contact_email": "lisa@greenenergy.com",
             "contact_role": "CEO",
             "probability": 100,
-            "expected_amount": 75000,
+            "expected_amount": 7500000,  # ₹75L
             "next_action": "Send thank you note",
             "next_action_date": "2024-01-25",
             "last_contact_date": "2024-01-18",
@@ -836,11 +836,11 @@ def add_new_prospect():
             
             with col1:
                 expected_amount = st.number_input(
-                    "Expected Amount ($)",
+                    "Expected Amount (₹)",
                     min_value=0,
-                    step=1000,
+                    step=10000,
                     format="%d",
-                    help="Estimated donation amount in USD"
+                    help="Estimated donation amount in INR"
                 )
                 
             with col2:
@@ -970,7 +970,7 @@ def add_new_prospect():
                                 st.write(f"**Email:** {email.strip()}")
                                 st.write(f"**Stage:** {current_stage}")
                             with col2:
-                                st.write(f"**Expected Amount:** ${expected_amount:,}")
+                                st.write(f"**Expected Amount:** ₹{expected_amount:,}")
                                 st.write(f"**Probability:** {probability}%")
                                 st.write(f"**Industry:** {industry}")
                                 st.write(f"**Assigned To:** {assigned_to.strip() if assigned_to else 'Unassigned'}")
@@ -1051,12 +1051,12 @@ def show_edit_donor_form():
             
             with col1:
                 expected_amount = st.number_input(
-                    "Expected Amount ($)",
+                    "Expected Amount (₹)",
                     min_value=0,
-                    step=1000,
+                    step=10000,
                     format="%d",
                     value=donor_data.get('expected_amount', 0),
-                    help="Estimated donation amount in USD"
+                    help="Estimated donation amount in INR"
                 )
                 
             with col2:
@@ -1213,7 +1213,7 @@ def show_edit_donor_form():
                                 st.write(f"**Email:** {email.strip()}")
                                 st.write(f"**Stage:** {current_stage}")
                             with col2:
-                                st.write(f"**Expected Amount:** ${expected_amount:,}")
+                                st.write(f"**Expected Amount:** ₹{expected_amount:,}")
                                 st.write(f"**Probability:** {probability}%")
                                 st.write(f"**Industry:** {industry}")
                                 st.write(f"**Assigned To:** {assigned_to.strip() if assigned_to else 'Unassigned'}")
@@ -1302,14 +1302,14 @@ def show_pipeline_analytics():
         with col2:
             st.metric(
                 "Pipeline Value", 
-                f"${total_pipeline_value:,.0f}",
+                f"₹{total_pipeline_value:,.0f}",
                 help="Total expected value of all prospects"
             )
         
         with col3:
             st.metric(
                 "Weighted Value", 
-                f"${weighted_value:,.0f}",
+                f"₹{weighted_value:,.0f}",
                 help="Probability-weighted pipeline value"
             )
         
@@ -1348,7 +1348,7 @@ def show_pipeline_analytics():
         
         with col1:
             st.metric("Active Prospects", active_count)
-            st.metric("Average Deal Size", f"${avg_deal_size:,.0f}")
+            st.metric("Average Deal Size", f"₹{avg_deal_size:,.0f}")
         
         with col2:
             st.metric("Average Probability", f"{avg_probability:.1f}%")
@@ -1380,7 +1380,7 @@ def show_pipeline_analytics():
         # Recent Activity Summary
         st.markdown("#### 📅 Recent Activity Summary")
         st.info(f"📊 **Pipeline Health:** {active_count} active prospects out of {total_prospects} total")
-        st.info(f"💰 **Financial Outlook:** ${weighted_value:,.0f} in probability-weighted pipeline value")
+        st.info(f"💰 **Financial Outlook:** ₹{weighted_value:,.0f} in probability-weighted pipeline value")
         st.info(f"🎯 **Success Rate:** {win_rate:.1f}% win rate from {total_closed} closed deals")
     
     else:
@@ -1394,7 +1394,7 @@ def show_pipeline_analytics():
         with col1:
             st.metric("Total Prospects", "0")
         with col2:
-            st.metric("Pipeline Value", "$0")
+            st.metric("Pipeline Value", "₹0")
         with col3:
             st.metric("Active Prospects", "0")
         with col4:

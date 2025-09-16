@@ -247,13 +247,15 @@ def generate_donor_profile_endpoint():
         
         donor_name = data.get('donor_name')
         export_to_docs = data.get('export_to_docs', True)
+        force_generate = data.get('force_generate', False)
         
-        logger.info(f"Generating profile for donor: {donor_name}")
+        logger.info(f"Generating profile for donor: {donor_name} (force_generate: {force_generate})")
         
         # Generate profile using the donor service
         result = donor_service.generate_donor_profile(
             donor_name=donor_name,
-            export_to_docs=export_to_docs
+            export_to_docs=export_to_docs,
+            force_generate=force_generate
         )
         
         if result.get("success"):
@@ -304,6 +306,79 @@ def get_profile_generator_status_endpoint():
             "google_docs": False,
             "backend_status": "error"
         })
+
+@app.route('/api/donor/check-existing', methods=['POST'])
+def check_existing_donor_endpoint():
+    """Check if donor already exists in database"""
+    try:
+        if not donor_service:
+            logger.warning("Database check - donor service not initialized")
+            return jsonify({
+                "success": False,
+                "error": "Donor service not initialized",
+                "backend_status": "service_unavailable"
+            }), 500
+        
+        # Get data from request
+        data = request.get_json()
+        if not data or 'donor_name' not in data:
+            return jsonify({
+                "success": False,
+                "error": "donor_name is required"
+            }), 400
+        
+        donor_name = data.get('donor_name')
+        
+        # Check existing donor
+        result = donor_service.check_existing_donor(donor_name)
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"Error checking existing donor: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "backend_status": "error"
+        }), 500
+
+@app.route('/api/donor/update-database', methods=['POST'])
+def update_donor_database_endpoint():
+    """Update the Google Sheets database with donor information"""
+    try:
+        if not donor_service:
+            logger.warning("Database update - donor service not initialized")
+            return jsonify({
+                "success": False,
+                "error": "Donor service not initialized",
+                "backend_status": "service_unavailable"
+            }), 500
+        
+        # Get data from request
+        donor_data = request.get_json()
+        if not donor_data:
+            return jsonify({
+                "success": False,
+                "error": "No donor data provided"
+            }), 400
+        
+        # Update database using donor service
+        result = donor_service.update_donor_database(donor_data)
+        
+        if result["success"]:
+            logger.info(f"Database updated successfully: {result.get('message', '')}")
+        else:
+            logger.warning(f"Database update failed: {result.get('error', '')}")
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"Error updating donor database: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "backend_status": "error"
+        }), 500
 
 @app.route('/api/moveStage', methods=['POST'])
 def move_stage():

@@ -122,38 +122,51 @@ def main():
             # Try to get contacts first, fallback to donors
             contacts = get_contacts() if get_contacts else None
             if contacts:
-                # Use contacts API
+                # Use contacts API with proper filtering
                 donor_options = []
                 for contact in contacts:
-                    org_name = contact.get('organization_name', 'Unknown Organization')
-                    contact_email = contact.get('contact_email', 'No email')
+                    org_name = contact.get('organization_name', '')
+                    contact_email = contact.get('contact_email', '')
                     contact_person = contact.get('contact_person', '')
                     
-                    # Format: "Organization Name (Contact Person) - email@domain.com"
-                    if contact_person and contact_person != org_name:
-                        display_name = f"{org_name} ({contact_person}) - {contact_email}"
-                    else:
-                        display_name = f"{org_name} - {contact_email}"
-                    
-                    donor_options.append(display_name)
+                    # Only include contacts with valid organization names and emails
+                    if (org_name and str(org_name).strip() and 
+                        str(org_name).strip().lower() not in ['unknown', 'n/a', 'null', ''] and
+                        contact_email and str(contact_email).strip() and 
+                        '@' in contact_email):
+                        
+                        # Format: "Organization Name (Contact Person) - email@domain.com"
+                        if contact_person and contact_person != org_name:
+                            display_name = f"{org_name.strip()} ({contact_person}) - {contact_email}"
+                        else:
+                            display_name = f"{org_name.strip()} - {contact_email}"
+                        
+                        donor_options.append(display_name)
             else:
-                # Fallback to donors API
+                # Fallback to donors API with proper filtering
                 donors = get_donors()
                 if donors:
                     donor_options = []
                     for donor in donors:
-                        org_name = donor.get('organization_name', 'Unknown Organization')
-                        contact_email = donor.get('contact_email', 'No email')
+                        org_name = donor.get('organization_name', '')
+                        contact_email = donor.get('contact_email', '')
                         contact_person = donor.get('contact_person', '')
                         
-                        # Format: "Organization Name (Contact Person) - email@domain.com"
-                        if contact_person and contact_person != org_name:
-                            display_name = f"{org_name} ({contact_person}) - {contact_email}"
-                        else:
-                            display_name = f"{org_name} - {contact_email}"
-                        
-                        donor_options.append(display_name)
-                else:
+                        # Only include donors with valid organization names and emails
+                        if (org_name and str(org_name).strip() and 
+                            str(org_name).strip().lower() not in ['unknown', 'n/a', 'null', ''] and
+                            contact_email and str(contact_email).strip() and 
+                            '@' in contact_email):
+                            
+                            # Format: "Organization Name (Contact Person) - email@domain.com"
+                            if contact_person and contact_person != org_name:
+                                display_name = f"{org_name.strip()} ({contact_person}) - {contact_email}"
+                            else:
+                                display_name = f"{org_name.strip()} - {contact_email}"
+                            
+                            donor_options.append(display_name)
+                
+                if not donor_options:
                     donor_options = [
                         "ABC Corporation (john@abccorp.com)",
                         "XYZ Foundation (contact@xyzfoundation.org)",

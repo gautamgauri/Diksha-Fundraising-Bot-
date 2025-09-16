@@ -264,8 +264,45 @@ class DonorService:
             logger.error(f"Error searching donors: {e}")
             return []
     
-    def generate_donor_profile(self, donor_name: str, export_to_docs: bool = True) -> Dict[str, Any]:
-        """Generate an AI-powered donor profile"""
+    def check_existing_donor(self, donor_name: str) -> Dict[str, Any]:
+        """Check if donor already exists in the database"""
+        try:
+            if not self.sheets_db or not self.sheets_db.initialized:
+                return {
+                    "exists": False,
+                    "error": "Database not available for checking"
+                }
+            
+            # Get all organizations from database
+            existing_donors = self.sheets_db.get_all_organizations()
+            donor_name_clean = donor_name.strip().lower()
+            
+            # Search for matching donor
+            for donor in existing_donors:
+                existing_name = donor.get("organization_name", "").strip().lower()
+                if existing_name == donor_name_clean:
+                    logger.info(f"Found existing donor: {donor_name}")
+                    return {
+                        "exists": True,
+                        "donor_data": donor,
+                        "message": f"Donor '{donor_name}' already exists in database"
+                    }
+            
+            logger.info(f"No existing donor found for: {donor_name}")
+            return {
+                "exists": False,
+                "message": f"No existing donor found for '{donor_name}'"
+            }
+            
+        except Exception as e:
+            logger.error(f"Error checking existing donor {donor_name}: {e}")
+            return {
+                "exists": False,
+                "error": str(e)
+            }
+    
+    def generate_donor_profile(self, donor_name: str, export_to_docs: bool = True, force_generate: bool = False) -> Dict[str, Any]:
+        """Generate an AI-powered donor profile with optional database checking"""
         if not self.profile_generator:
             return {
                 "success": False,
@@ -273,20 +310,131 @@ class DonorService:
             }
         
         try:
+            # Check if donor already exists (unless force generation is requested)
+            existing_check = None
+            if not force_generate:
+                existing_check = self.check_existing_donor(donor_name)
+                
+                if existing_check.get("exists"):
+                    # Return existing donor info instead of generating
+                    return {
+                        "success": True,
+                        "already_exists": True,
+                        "existing_donor": existing_check.get("donor_data"),
+                        "message": existing_check.get("message"),
+                        "suggestion": "Use 'force_generate=true' to create a new profile anyway"
+                    }
+            
             # Use default profiles folder ID from environment or config
             profiles_folder_id = "1Zrk26Mn0QtH9_9WYq4fPAaIdONOAIkcS"  # From original Colab code
             
-            logger.info(f"Generating profile for: {donor_name}")
+            logger.info(f"Generating new profile for: {donor_name}")
             result = self.profile_generator.generate_donor_profile(
                 donor_name=donor_name,
                 export_to_docs=export_to_docs,
                 folder_id=profiles_folder_id
             )
             
+            # Add existing check info to result
+            if existing_check:
+                result["existing_check"] = existing_check
+            
             return result
             
         except Exception as e:
             logger.error(f"Error generating donor profile for {donor_name}: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+    
+    def update_donor_database(self, donor_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Update the Google Sheets database with donor information"""
+        try:
+            if not self.sheets_db or not self.sheets_db.initialized:
+                return {
+                    "success": False,
+                    "error": "Google Sheets database not initialized"
+                }
+            
+            # Extract donor information
+            donor_name = donor_data.get("donor_name", "").strip()
+            if not donor_name:
+                return {
+                    "success": False,
+                    "error": "Donor name is required"
+                }
+            
+            # Prepare donor record
+            donor_record = {
+                "organization_name": donor_name,
+                "contact_person": donor_data.get("contact_person", ""),
+                "contact_email": donor_data.get("contact_email", ""),
+                "contact_role": donor_data.get("contact_role", ""),
+                "website": donor_data.get("website", ""),
+                "sector_tags": donor_data.get("sector_tags", ""),
+                "current_stage": "Initial Outreach",
+                "assigned_to": donor_data.get("assigned_to", ""),
+                "expected_amount": donor_data.get("expected_amount", 0),
+                "probability": donor_data.get("probability", 25),
+                "notes": donor_data.get("notes", ""),
+                "date_added": datetime.now().strftime("%Y-%m-%d"),
+                "last_contact_date": "",
+                "next_action": "Initial follow-up",
+                "next_action_date": "",
+                "profile_generated": "Yes",
+                "profile_date": datetime.now().strftime("%Y-%m-%d"),
+                "document_url": donor_data.get("document_url", ""),
+                "pdf_url": donor_data.get("pdf_url", "")
+            }
+            
+            # Check if donor already exists
+            existing_donors = self.sheets_db.get_all_organizations()
+            existing_donor = None
+            
+            for donor in existing_donors:
+                if donor.get("organization_name", "").strip().lower() == donor_name.lower():
+                    existing_donor = donor
+                    break
+            
+            if existing_donor:
+                # Update existing donor
+                logger.info(f"Updating existing donor: {donor_name}")
+                donor_record["id"] = existing_donor.get("id", "")
+                result = self.sheets_db.update_organization(donor_record["id"], donor_record)
+                
+                if result:
+                    return {
+                        "success": True,
+                        "action": "updated",
+                        "donor_name": donor_name,
+                        "message": f"Successfully updated donor: {donor_name}"
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "error": f"Failed to update donor: {donor_name}"
+                    }
+            else:
+                # Add new donor
+                logger.info(f"Adding new donor: {donor_name}")
+                result = self.sheets_db.add_organization(donor_record)
+                
+                if result:
+                    return {
+                        "success": True,
+                        "action": "added",
+                        "donor_name": donor_name,
+                        "message": f"Successfully added new donor: {donor_name}"
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "error": f"Failed to add donor: {donor_name}"
+                    }
+                    
+        except Exception as e:
+            logger.error(f"Error updating donor database: {e}")
             return {
                 "success": False,
                 "error": str(e)

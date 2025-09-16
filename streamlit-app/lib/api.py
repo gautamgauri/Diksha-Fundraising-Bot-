@@ -205,6 +205,24 @@ def get_cached_pipeline_data() -> Optional[List[Dict]]:
         return result.get("data", [])
     return result
 
+def check_existing_donor(donor_name: str) -> Optional[Dict]:
+    """Check if donor already exists in database"""
+    try:
+        result = make_api_request("/api/donor/check-existing", method="POST", data={"donor_name": donor_name})
+        return result
+    except Exception as e:
+        st.error(f"Error checking existing donor: {e}")
+        return {"exists": False, "error": str(e)}
+
+def update_donor_database(donor_data: Dict[str, Any]) -> Optional[Dict]:
+    """Update the Google Sheets database with donor information"""
+    try:
+        result = make_api_request("/api/donor/update-database", method="POST", data=donor_data)
+        return result
+    except Exception as e:
+        st.error(f"Error updating donor database: {e}")
+        return {"success": False, "error": str(e)}
+
 def get_templates() -> Optional[Dict]:
     """Get email templates"""
     result = make_api_request("/debug/templates")
