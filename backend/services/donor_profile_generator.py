@@ -94,8 +94,16 @@ class ModelManager:
         return api_key and len(api_key.strip()) > 10 and not api_key.startswith('your-')
     
     def get_available_models(self) -> Dict:
-        """Return available models"""
-        return self.models
+        """Return available models (JSON serializable)"""
+        # Return a JSON-serializable version without client objects
+        serializable_models = {}
+        for provider, config in self.models.items():
+            serializable_models[provider] = {
+                'type': config['type'],
+                'models': config['models'],
+                'client_initialized': config.get('client') is not None
+            }
+        return serializable_models
     
     def select_best_generation_model(self):
         """Select the best model for profile generation"""
