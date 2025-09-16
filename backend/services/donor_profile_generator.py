@@ -164,13 +164,15 @@ class DataCollector:
         """Basic API key validation"""
         return api_key and len(api_key.strip()) > 10 and not api_key.startswith('your-')
 
-    def get_foundation_website(self, donor_name: str) -> str:
+    def get_foundation_website(self, donor_name: str) -> tuple:
         """Get foundation website URL using smart service fallback"""
         search_queries = [
             f'"{donor_name}" foundation website',
             f'{donor_name} foundation official site',
             f'{donor_name} foundation .org'
         ]
+
+        services_used = []
 
         # Try each query with available services
         for query in search_queries:
@@ -185,9 +187,14 @@ class DataCollector:
                 try:
                     self.logger.info(f"Trying {service_name} for: {query[:50]}...")
                     url = self._search_with_service(service_name, query)
+
+                    # Track service usage
+                    if service_name not in services_used:
+                        services_used.append(service_name)
+
                     if url:
                         self.logger.info(f"Found URL using {service_name}: {url}")
-                        return url
+                        return url, services_used
 
                 except Exception as e:
                     error_msg = str(e)
@@ -200,7 +207,8 @@ class DataCollector:
 
         # Final fallback: domain guessing
         self.logger.info("Falling back to domain guessing")
-        return self._guess_foundation_domain(donor_name)
+        guessed_url = self._guess_foundation_domain(donor_name)
+        return guessed_url, services_used
 
     def _search_with_service(self, service_name: str, query: str) -> str:
         """Route search to appropriate service method"""
@@ -849,11 +857,15 @@ class DataCollector:
         }
 
         # Get main website
-        website_url = self.get_foundation_website(donor_name)
-        if website_url:
-            print(f"Found website: {website_url}")
-            website_data = self.scrape_foundation_page(website_url)
-            research_data["website_data"] = website_data
+        website_result = self.get_foundation_website(donor_name)
+        if website_result:
+            website_url, search_services_used = website_result
+            if website_url:
+                print(f"Found website: {website_url}")
+                website_data = self.scrape_foundation_page(website_url)
+                research_data["website_data"] = website_data
+                # Track which search services were used
+                research_data["services_used"].extend(search_services_used)
 
         # Get Wikipedia information for additional context
         wikipedia_data = self._get_wikipedia_info(donor_name)
@@ -1648,6 +1660,47 @@ class GoogleDocsExporter:
             removeParents=previous_parents,
             fields='id, parents'
         ).execute()
+    
+    def export_to_pdf(self, doc_id: str, donor_name: str, folder_id: Optional[str] = None) -> Dict:
+        """Export Google Doc to PDF and save to Drive"""
+        try:
+            # Generate PDF filename
+            pdf_filename = f"Donor Profile - {donor_name} - {datetime.now().strftime('%Y-%m-%d')}.pdf"
+            
+            # Export document as PDF
+            pdf_content = self.drive_service.files().export_media(
+                fileId=doc_id,
+                mimeType='application/pdf'
+            ).execute()
+            
+            # Create file metadata
+            file_metadata = {
+                'name': pdf_filename,
+                'mimeType': 'application/pdf'
+            }
+            
+            # Upload PDF to Drive
+            if folder_id:
+                file_metadata['parents'] = [folder_id]
+            
+            pdf_file = self.drive_service.files().create(
+                body=file_metadata,
+                media_body=io.BytesIO(pdf_content),
+                fields='id, name, webViewLink'
+            ).execute()
+            
+            pdf_id = pdf_file.get('id')
+            pdf_url = pdf_file.get('webViewLink')
+            
+            return {
+                "success": True,
+                "pdf_id": pdf_id,
+                "pdf_url": pdf_url,
+                "filename": pdf_filename
+            }
+            
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
 
 class DonorProfileService:
@@ -1746,7 +1799,7 @@ class DonorProfileService:
             evaluation_result = self.profile_evaluator.evaluate_profile(profile_content, donor_name)
             results["steps"]["evaluation"] = evaluation_result
 
-            # Step 4: Export to Google Docs
+            # Step 4: Export to Google Docs and PDF
             if export_to_docs and self.docs_exporter:
                 self.logger.info("Step 4: Exporting to Google Docs...")
                 export_result = self.docs_exporter.create_profile_document(
@@ -1757,6 +1810,21 @@ class DonorProfileService:
                 if export_result["success"]:
                     results["document_url"] = export_result["document_url"]
                     results["document_id"] = export_result["document_id"]
+                    
+                    # Step 5: Export to PDF
+                    self.logger.info("Step 5: Exporting to PDF...")
+                    pdf_result = self.docs_exporter.export_to_pdf(
+                        export_result["document_id"], donor_name, folder_id
+                    )
+                    results["steps"]["pdf_export"] = pdf_result
+                    
+                    if pdf_result["success"]:
+                        results["pdf_url"] = pdf_result["pdf_url"]
+                        results["pdf_filename"] = pdf_result["filename"]
+                        self.logger.info(f"PDF exported successfully: {pdf_result['filename']}")
+                    else:
+                        self.logger.warning(f"PDF export failed: {pdf_result.get('error', 'Unknown error')}")
+                        
             elif export_to_docs:
                 results["steps"]["export"] = {
                     "success": False,
