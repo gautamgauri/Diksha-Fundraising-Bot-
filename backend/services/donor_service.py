@@ -303,12 +303,20 @@ class DonorService:
             }
         
         try:
+            # Get models in a JSON-safe way
+            models = self.profile_generator.get_available_models()
+
             return {
                 "available": True,
-                "models": self.profile_generator.get_available_models(),
+                "models": models,
                 "google_docs": self.profile_generator.is_google_docs_available()
             }
         except Exception as e:
+            # Log the full error for debugging
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Profile generator status error: {type(e).__name__}: {str(e)}")
+
             return {
                 "available": False,
                 "error": str(e),
