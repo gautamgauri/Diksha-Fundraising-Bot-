@@ -1291,20 +1291,63 @@ Please provide:
 Format: Start with "SCORE: [number]" then provide detailed feedback.
 """
     
+    def _get_anthropic_client(self):
+        """Get or create Anthropic client - reuse ProfileGenerator's method"""
+        # Use the same client from the model manager
+        if 'anthropic' not in self.model_manager.models:
+            return None
+
+        anthropic_config = self.model_manager.models['anthropic']
+
+        # Return existing client if already initialized
+        if anthropic_config.get('client'):
+            return anthropic_config['client']
+
+        # Initialize using the same method as ProfileGenerator
+        try:
+            import anthropic
+            import os
+            api_key = anthropic_config['api_key']
+
+            # Use same proxy cleanup approach
+            old_env = {}
+            proxy_vars = [
+                'HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy',
+                'ALL_PROXY', 'all_proxy', 'NO_PROXY', 'no_proxy',
+                'SOCKS_PROXY', 'socks_proxy'
+            ]
+            for var in proxy_vars:
+                if var in os.environ:
+                    old_env[var] = os.environ[var]
+                    del os.environ[var]
+
+            try:
+                client = anthropic.Anthropic(api_key=api_key)
+                anthropic_config['client'] = client
+                return client
+            finally:
+                # Restore environment variables
+                for var, value in old_env.items():
+                    os.environ[var] = value
+
+        except Exception as e:
+            self.model_manager.logger.error(f"ProfileEvaluator Anthropic client init failed: {e}")
+            return None
+
     def _evaluate_with_anthropic(self, model: str, prompt: str) -> str:
         """Evaluate using Anthropic Claude"""
         # Lazy initialization of Anthropic client
         client = self._get_anthropic_client()
         if not client:
             raise Exception("Failed to initialize Anthropic client")
-        
+
         message = client.messages.create(
             model=model,
             max_tokens=2000,
             temperature=0.1,
             messages=[{"role": "user", "content": prompt}]
         )
-        
+
         return message.content[0].text
     
     def _evaluate_with_openai(self, model: str, prompt: str) -> str:
