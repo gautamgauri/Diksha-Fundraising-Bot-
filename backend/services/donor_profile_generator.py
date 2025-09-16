@@ -365,7 +365,10 @@ class DataCollector:
                         return link
             else:
                 self.logger.error(f"❌ SerpAPI HTTP error: {response.status_code}")
-                if response.status_code in [429, 403, 402]:
+                if response.status_code == 401:
+                    self.logger.error(f"🔑 SerpAPI authentication failed - check SERPAPI_KEY environment variable")
+                    self.logger.error(f"🔍 Current key starts with: {self.search_services['serpapi']['key'][:10]}...")
+                elif response.status_code in [429, 403, 402]:
                     raise Exception(f"SerpAPI quota error: HTTP {response.status_code}")
 
         except Exception as e:
@@ -1618,7 +1621,12 @@ class GoogleDocsExporter:
             
             # Move to folder if specified
             if folder_id:
-                self._move_to_folder(doc_id, folder_id)
+                try:
+                    self._move_to_folder(doc_id, folder_id)
+                    self.logger.info(f"✅ Document moved to folder successfully")
+                except Exception as folder_error:
+                    self.logger.warning(f"⚠️ Could not move document to folder: {folder_error}")
+                    self.logger.info("📄 Document created successfully but remains in root Drive")
             
             # Get document URL
             doc_url = f"https://docs.google.com/document/d/{doc_id}"

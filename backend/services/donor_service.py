@@ -274,7 +274,10 @@ class DonorService:
                 }
             
             # Get all organizations from database
-            existing_donors = self.sheets_db.get_all_organizations()
+            pipeline = self.sheets_db.get_pipeline()
+            existing_donors = []
+            for stage_orgs in pipeline.values():
+                existing_donors.extend(stage_orgs)
             donor_name_clean = donor_name.strip().lower()
             
             # Search for matching donor
@@ -389,7 +392,10 @@ class DonorService:
             }
             
             # Check if donor already exists
-            existing_donors = self.sheets_db.get_all_organizations()
+            pipeline = self.sheets_db.get_pipeline()
+            existing_donors = []
+            for stage_orgs in pipeline.values():
+                existing_donors.extend(stage_orgs)
             existing_donor = None
             
             for donor in existing_donors:
