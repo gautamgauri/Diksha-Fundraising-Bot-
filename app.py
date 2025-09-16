@@ -307,37 +307,6 @@ def get_profile_generator_status_endpoint():
             "backend_status": "error"
         })
 
-@app.route('/api/test-google-docs', methods=['GET'])
-def test_google_docs_permissions_endpoint():
-    """Test Google Docs service account permissions"""
-    try:
-        # Import the test function
-        from test_google_docs_permissions import test_google_docs_permissions
-
-        # Run the test
-        success = test_google_docs_permissions()
-
-        if success:
-            return jsonify({
-                "success": True,
-                "message": "Google Docs permissions working correctly!",
-                "status": "Service account can create documents in the folder"
-            })
-        else:
-            return jsonify({
-                "success": False,
-                "message": "Google Docs permissions test failed",
-                "status": "Check service account permissions"
-            }), 500
-
-    except Exception as e:
-        logger.error(f"Error testing Google Docs permissions: {e}")
-        return jsonify({
-            "success": False,
-            "error": str(e),
-            "status": "Test failed with exception"
-        }), 500
-
 @app.route('/api/donor/check-existing', methods=['POST'])
 def check_existing_donor_endpoint():
     """Check if donor already exists in database"""
