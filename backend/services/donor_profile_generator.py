@@ -62,6 +62,8 @@ class ModelManager:
                 self.logger.warning("OpenAI not available - install openai package")
             except Exception as e:
                 self.logger.error(f"Failed to initialize OpenAI client: {e}")
+        else:
+            self.logger.info("OpenAI API key not configured")
 
         # Google Gemini models
         gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_AI_API_KEY")
@@ -981,38 +983,69 @@ class ProfileGenerator:
         self.model_manager = model_manager
     
     def generate_profile(self, donor_name: str, research_data: Dict) -> Dict:
-        """Generate a comprehensive donor profile"""
-        provider, model = self.model_manager.select_best_generation_model()
-        if not provider:
-            return {"success": False, "error": "No AI models available"}
-        
+        """Generate a comprehensive donor profile with automatic fallback"""
+        available_models = self.model_manager.get_available_models()
+        if not available_models:
+            return {
+                "success": False,
+                "error": "No AI models available. Please configure ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, or DEEPSEEK_API_KEY."
+            }
+
         # Prepare research context
         context = self._prepare_context(donor_name, research_data)
-        
-        # Generate profile using AI
         prompt = self._create_generation_prompt(donor_name, context)
-        
-        try:
-            if provider == 'anthropic':
-                response = self._generate_with_anthropic(model, prompt)
-            elif provider == 'openai':
-                response = self._generate_with_openai(model, prompt)
-            elif provider == 'gemini':
-                response = self._generate_with_gemini(model, prompt)
-            elif provider == 'deepseek':
-                response = self._generate_with_deepseek(model, prompt)
+
+        # Try models in priority order with automatic fallback
+        model_attempts = []
+
+        for provider_name in ['anthropic', 'openai', 'gemini', 'deepseek']:
+            if provider_name not in available_models:
+                continue
+
+            # Get the best model for this provider
+            if provider_name == 'anthropic':
+                provider, model = ('anthropic', 'claude-3-5-sonnet-20241022')
+            elif provider_name == 'openai':
+                provider, model = ('openai', 'gpt-4o')
+            elif provider_name == 'gemini':
+                provider, model = ('gemini', 'gemini-1.5-pro')
+            elif provider_name == 'deepseek':
+                provider, model = ('deepseek', 'deepseek-chat')
             else:
-                return {"success": False, "error": f"Unsupported provider: {provider}"}
-            
-            return {
-                "success": True,
-                "profile": response,
-                "model_used": f"{provider}/{model}",
-                "generation_timestamp": datetime.now().isoformat()
-            }
-            
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+                continue
+
+            try:
+                if provider == 'anthropic':
+                    response = self._generate_with_anthropic(model, prompt)
+                elif provider == 'openai':
+                    response = self._generate_with_openai(model, prompt)
+                elif provider == 'gemini':
+                    response = self._generate_with_gemini(model, prompt)
+                elif provider == 'deepseek':
+                    response = self._generate_with_deepseek(model, prompt)
+                else:
+                    continue
+
+                return {
+                    "success": True,
+                    "profile": response,
+                    "model_used": f"{provider}/{model}",
+                    "generation_timestamp": datetime.now().isoformat(),
+                    "fallback_attempts": model_attempts
+                }
+
+            except Exception as e:
+                error_msg = f"{provider}/{model}: {str(e)}"
+                model_attempts.append(error_msg)
+                self.model_manager.logger.warning(f"Model {provider}/{model} failed: {e}, trying next...")
+                continue
+
+        # If we get here, all models failed
+        return {
+            "success": False,
+            "error": f"All AI models failed. Attempts: {'; '.join(model_attempts)}",
+            "fallback_attempts": model_attempts
+        }
     
     def _prepare_context(self, donor_name: str, research_data: Dict) -> str:
         """Prepare research context for AI generation"""
@@ -1071,45 +1104,63 @@ Make sure to:
         return message.content[0].text
     
     def _get_anthropic_client(self):
-        """Get or create Anthropic client with lazy initialization"""
+        """Get or create Anthropic client with lazy initialization and robust error handling"""
         if 'anthropic' not in self.model_manager.models:
             return None
-            
+
         anthropic_config = self.model_manager.models['anthropic']
-        
+
         # Return existing client if already initialized
         if anthropic_config.get('client'):
             return anthropic_config['client']
-        
-        # Initialize client now
+
+        # Initialize client now with multiple fallback strategies
         try:
             import anthropic
             api_key = anthropic_config['api_key']
-            
-            # Try basic initialization first
+
+            # Strategy 1: Basic initialization
             try:
                 client = anthropic.Anthropic(api_key=api_key)
-                self.model_manager.logger.info("Anthropic client initialized successfully")
-            except Exception as e:
-                self.model_manager.logger.warning(f"Basic Anthropic initialization failed: {e}")
-                # Try alternative initialization without extra parameters
+                self.model_manager.logger.info("Anthropic client initialized successfully with basic method")
+                anthropic_config['client'] = client
+                return client
+            except Exception as e1:
+                self.model_manager.logger.warning(f"Basic Anthropic initialization failed: {e1}")
+
+                # Strategy 2: Try with explicit timeout settings
                 try:
-                    import anthropic
-                    client = anthropic.Anthropic(api_key=api_key)
-                    self.model_manager.logger.info("Anthropic client initialized with fallback method")
+                    client = anthropic.Anthropic(
+                        api_key=api_key,
+                        timeout=30.0
+                    )
+                    self.model_manager.logger.info("Anthropic client initialized successfully with timeout")
+                    anthropic_config['client'] = client
+                    return client
                 except Exception as e2:
-                    self.model_manager.logger.error(f"All Anthropic initialization methods failed: {e2}")
-                    return None
-            
-            # Store the client for future use
-            anthropic_config['client'] = client
-            return client
-            
+                    self.model_manager.logger.warning(f"Anthropic initialization with timeout failed: {e2}")
+
+                    # Strategy 3: Try with explicit base URL
+                    try:
+                        client = anthropic.Anthropic(
+                            api_key=api_key,
+                            base_url="https://api.anthropic.com"
+                        )
+                        self.model_manager.logger.info("Anthropic client initialized successfully with explicit base URL")
+                        anthropic_config['client'] = client
+                        return client
+                    except Exception as e3:
+                        self.model_manager.logger.error(f"All Anthropic initialization strategies failed:")
+                        self.model_manager.logger.error(f"  Strategy 1 (basic): {e1}")
+                        self.model_manager.logger.error(f"  Strategy 2 (timeout): {e2}")
+                        self.model_manager.logger.error(f"  Strategy 3 (explicit URL): {e3}")
+                        return None
+
         except ImportError:
-            self.model_manager.logger.warning("Anthropic package not available")
+            self.model_manager.logger.error("Anthropic package not available - run: pip install anthropic")
             return None
         except Exception as e:
-            self.model_manager.logger.error(f"Failed to initialize Anthropic client: {e}")
+            self.model_manager.logger.error(f"Unexpected error initializing Anthropic client: {e}")
             return None
 
     def _generate_with_openai(self, model: str, prompt: str) -> str:
