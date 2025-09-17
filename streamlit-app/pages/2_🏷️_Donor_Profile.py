@@ -700,7 +700,78 @@ def main():
             st.info("To enable AI profile generation, configure AI models (Anthropic/OpenAI) and Google credentials.")
         
         st.markdown("---")
-        
+
+        # Display Generated Profile Results
+        if hasattr(st.session_state, 'last_profile_result') and st.session_state.last_profile_result:
+            result = st.session_state.last_profile_result
+
+            if result.get("success") and result.get("profile_content"):
+                st.subheader("🎯 Generated Profile Results")
+
+                # Show the full generated profile
+                with st.expander("📄 Complete AI-Generated Profile", expanded=True):
+                    st.markdown(result["profile_content"])
+
+                # Show research data and sources
+                if result.get("steps"):
+                    steps = result["steps"]
+
+                    # Research data section
+                    if steps.get("research", {}).get("success"):
+                        research_data = steps["research"].get("data", {})
+                        if research_data:
+                            with st.expander("🔍 Research Data & Sources"):
+                                st.markdown("**Sources used for profile generation:**")
+
+                                # Wikipedia data
+                                if research_data.get("wikipedia"):
+                                    st.markdown("**📚 Wikipedia Information:**")
+                                    wiki_data = research_data["wikipedia"]
+                                    if isinstance(wiki_data, dict):
+                                        for key, value in wiki_data.items():
+                                            if value and str(value).strip():
+                                                st.write(f"• **{key.replace('_', ' ').title()}:** {value}")
+                                    else:
+                                        st.write(f"• {wiki_data}")
+                                    st.markdown("---")
+
+                                # Website data
+                                if research_data.get("website"):
+                                    st.markdown("**🌐 Website Information:**")
+                                    website_data = research_data["website"]
+                                    if isinstance(website_data, dict):
+                                        for key, value in website_data.items():
+                                            if value and str(value).strip():
+                                                st.write(f"• **{key.replace('_', ' ').title()}:** {value}")
+                                    else:
+                                        st.write(f"• {website_data}")
+                                    st.markdown("---")
+
+                                # Additional sources
+                                if research_data.get("additional_sources"):
+                                    st.markdown("**📰 Additional Sources:**")
+                                    sources = research_data["additional_sources"]
+                                    if isinstance(sources, list):
+                                        for source in sources:
+                                            st.write(f"• {source}")
+                                    else:
+                                        st.write(f"• {sources}")
+
+                # Show generation metadata
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    model_used = steps.get("generation", {}).get("model_used", "Unknown")
+                    st.metric("AI Model Used", model_used)
+                with col2:
+                    if steps.get("evaluation", {}).get("success"):
+                        score = steps["evaluation"].get("score", "N/A")
+                        st.metric("Quality Score", f"{score}/100")
+                with col3:
+                    profile_length = len(result.get("profile_content", ""))
+                    st.metric("Profile Length", f"{profile_length:,} chars")
+
+                st.markdown("---")
+
         # Donor profile display
         col1, col2 = st.columns([2, 1])
         
