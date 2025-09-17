@@ -46,10 +46,12 @@ PyJWT==2.8.0
 # Environment and configuration
 python-decouple==3.8
 
-# Streamlit web framework and authentication
+# Streamlit web framework and custom OAuth authentication
 streamlit==1.28.1
-streamlit-authenticator==0.3.1
 
-# Additional dependencies for authenticator
+# Custom OAuth authentication dependencies (already listed above)
+# google-auth, google-auth-oauthlib, requests, cryptography, PyJWT
+
+# Additional dependencies
 bcrypt==4.0.1
 PyYAML==6.0.1

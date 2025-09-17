@@ -39,22 +39,20 @@ enhanced_check_auth = fallback_check_auth
 show_auth_status = None
 
 try:
-    from lib.auth import enhanced_check_auth, show_enhanced_auth_status
-    check_auth = enhanced_check_auth
-    show_auth_status = show_enhanced_auth_status
-    print("✅ Using enhanced authentication with streamlit-authenticator")
+    from lib.auth import check_auth, show_auth_status
+    print("SUCCESS: Using streamlit-authenticator authentication")
 except ImportError as e:
-    print(f"❌ Enhanced auth import failed: {e}, trying legacy auth")
+    print(f"ERROR: Auth import failed: {e}, trying fallback")
     try:
         from lib.auth import check_auth, show_auth_status
-        print("✅ Using legacy authentication")
+        print("SUCCESS: Using legacy authentication")
     except ImportError as e:
-        print(f"❌ Lib package import failed: {e}")
+        print(f"ERROR: Lib package import failed: {e}")
         try:
             from auth import check_auth  # type: ignore
-            print("✅ Using direct module import for check_auth")
+            print("SUCCESS: Using direct module import for check_auth")
         except ImportError as e:
-            print(f"❌ Direct module import failed: {e}")
+            print(f"ERROR: Direct module import failed: {e}")
             if lib_path:
                 try:
                     auth_file_path = os.path.join(lib_path, 'auth.py')
@@ -62,16 +60,12 @@ except ImportError as e:
                         spec = importlib.util.spec_from_file_location("auth", auth_file_path)
                         auth_module = importlib.util.module_from_spec(spec)
                         spec.loader.exec_module(auth_module)
-                        if hasattr(auth_module, 'enhanced_check_auth'):
-                            check_auth = auth_module.enhanced_check_auth
-                            show_auth_status = getattr(auth_module, 'show_enhanced_auth_status', None)
-                            print("✅ Using importlib for enhanced_check_auth")
-                        elif hasattr(auth_module, 'check_auth'):
+                        if hasattr(auth_module, 'check_auth'):
                             check_auth = auth_module.check_auth
                             show_auth_status = getattr(auth_module, 'show_auth_status', None)
-                            print("✅ Using importlib for check_auth")
+                            print("SUCCESS: Using importlib for check_auth")
                 except Exception as e:
-                    print(f"❌ Importlib failed: {e}")
+                    print(f"ERROR: Importlib failed: {e}")
 
             if check_auth == fallback_check_auth:
                 for path in possible_paths:
@@ -82,21 +76,16 @@ except ImportError as e:
                             spec = importlib.util.spec_from_file_location("auth", auth_file_path)
                             auth_module = importlib.util.module_from_spec(spec)
                             spec.loader.exec_module(auth_module)
-                            if hasattr(auth_module, 'enhanced_check_auth'):
-                                check_auth = auth_module.enhanced_check_auth
-                                show_auth_status = getattr(auth_module, 'show_enhanced_auth_status', None)
-                                print(f"✅ Found enhanced_check_auth in {abs_path}")
-                                break
-                            elif hasattr(auth_module, 'check_auth'):
+                            if hasattr(auth_module, 'check_auth'):
                                 check_auth = auth_module.check_auth
                                 show_auth_status = getattr(auth_module, 'show_auth_status', None)
-                                print(f"✅ Found check_auth in {abs_path}")
+                                print(f"SUCCESS: Found check_auth in {abs_path}")
                                 break
                     except Exception as e:
-                        print(f"❌ Failed to import from {path}: {e}")
+                        print(f"ERROR: Failed to import from {path}: {e}")
                         continue
 
-print(f"✅ Final authentication import: Enhanced={check_auth != fallback_check_auth}")
+print(f"SUCCESS: Final authentication import: Enhanced={check_auth != fallback_check_auth}")
 
 # Import API functions for dashboard metrics
 def fallback_get_pipeline_data():
@@ -117,9 +106,9 @@ try:
     get_pipeline_data = get_cached_pipeline_data
     get_proposals_data = get_proposals
     get_activity_data = get_activity_log
-    print("✅ Using lib.api imports for dashboard metrics")
+    print("SUCCESS: Using lib.api imports for dashboard metrics")
 except ImportError as e:
-    print(f"❌ Lib.api import failed: {e}")
+    print(f"ERROR: Lib.api import failed: {e}")
     # Fallback functions already set
 
 # Page configuration

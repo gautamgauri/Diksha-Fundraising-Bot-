@@ -61,12 +61,12 @@ check_existing_donor = None
 
 try:
     from lib.api import get_donors, get_donor_profile, generate_donor_profile, generate_donor_profile_stream, get_profile_generator_status, update_donor_database, update_donor, check_existing_donor
-    print("✅ Using lib.api imports")
+    print("Using lib.api imports")
 except ImportError as e:
     print(f"❌ Lib.api import failed: {e}")
     try:
         from api import get_donors, get_donor_profile  # type: ignore
-        print("✅ Using direct api imports")
+        print("Using direct api imports")
     except ImportError as e:
         print(f"❌ Direct api import failed: {e}")
         if lib_path:
@@ -80,7 +80,7 @@ except ImportError as e:
                         get_donors = api_module.get_donors
                     if hasattr(api_module, 'get_donor_profile'):
                         get_donor_profile = api_module.get_donor_profile
-                    print("✅ Using importlib for api module")
+                    print("Using importlib for api module")
             except Exception as e:
                 print(f"❌ Importlib failed: {e}")
         
@@ -97,7 +97,7 @@ except ImportError as e:
                             get_donors = api_module.get_donors
                         if hasattr(api_module, 'get_donor_profile'):
                             get_donor_profile = api_module.get_donor_profile
-                        print(f"✅ Found api functions in {abs_path}")
+                        print(f"Found api functions in {abs_path}")
                         break
                 except Exception as e:
                     print(f"❌ Failed to import from {path}: {e}")

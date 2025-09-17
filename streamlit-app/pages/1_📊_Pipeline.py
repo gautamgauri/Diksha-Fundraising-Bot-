@@ -88,15 +88,15 @@ show_auth_status = fallback_show_auth_status
 
 try:
     from lib import log_activity, get_cached_pipeline_data, require_auth, show_auth_status
-    print("✅ Using lib package imports")
+    print("Using lib package imports")
 except ImportError as e:
-    print(f"❌ Lib package import failed: {e}")
+    print(f"Lib package import failed: {e}")
     try:
         from api import log_activity, get_cached_pipeline_data  # type: ignore
         from auth import require_auth, show_auth_status  # type: ignore
-        print("✅ Using direct module imports")
+        print("Using direct module imports")
     except ImportError as e:
-        print(f"❌ Direct module import failed: {e}")
+        print(f"Direct module import failed: {e}")
         if lib_path:
             try:
                 # Import api module
@@ -109,7 +109,7 @@ except ImportError as e:
                         log_activity = api_module.log_activity
                     if hasattr(api_module, 'get_cached_pipeline_data'):
                         get_cached_pipeline_data = api_module.get_cached_pipeline_data
-                    print("✅ Using importlib for api module")
+                    print("Using importlib for api module")
                 
                 # Import auth module
                 auth_file_path = os.path.join(lib_path, 'auth.py')
@@ -121,7 +121,7 @@ except ImportError as e:
                         require_auth = auth_module.require_auth
                     if hasattr(auth_module, 'show_auth_status'):
                         show_auth_status = auth_module.show_auth_status
-                    print("✅ Using importlib for auth module")
+                    print("Using importlib for auth module")
             except Exception as e:
                 print(f"❌ Importlib failed: {e}")
         
@@ -141,7 +141,7 @@ except ImportError as e:
                             log_activity = api_module.log_activity
                         if hasattr(api_module, 'get_cached_pipeline_data'):
                             get_cached_pipeline_data = api_module.get_cached_pipeline_data
-                        print(f"✅ Found api functions in {abs_path}")
+                        print(f"Found api functions in {abs_path}")
                     
                     if os.path.exists(auth_file_path):
                         spec = importlib.util.spec_from_file_location("auth", auth_file_path)
@@ -151,13 +151,20 @@ except ImportError as e:
                             require_auth = auth_module.require_auth
                         if hasattr(auth_module, 'show_auth_status'):
                             show_auth_status = auth_module.show_auth_status
-                        print(f"✅ Found auth functions in {abs_path}")
+                        print(f"Found auth functions in {abs_path}")
                         
                 except Exception as e:
                     print(f"❌ Failed to import from {path}: {e}")
                     continue
 
-print(f"✅ Final imports - log_activity: {log_activity != fallback_log_activity}, get_cached_pipeline_data: {get_cached_pipeline_data != fallback_get_cached_pipeline_data}, require_auth: {require_auth != fallback_require_auth}, show_auth_status: {show_auth_status != fallback_show_auth_status}")
+print(
+    "Final imports - log_activity: {0}, get_cached_pipeline_data: {1}, require_auth: {2}, show_auth_status: {3}".format(
+        log_activity != fallback_log_activity,
+        get_cached_pipeline_data != fallback_get_cached_pipeline_data,
+        require_auth != fallback_require_auth,
+        show_auth_status != fallback_show_auth_status,
+    )
+)
 
 # Page configuration
 st.set_page_config(

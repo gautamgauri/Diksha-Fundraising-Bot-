@@ -31,12 +31,12 @@ if lib_path and lib_path not in sys.path:
 # Import API functions
 try:
     from lib import test_api_connection, get_pipeline_data, get_templates, test_connection_robustness, get_data_quality_stats
-    print("✅ Using lib package imports for debug")
+    print("Using lib package imports for debug")
 except ImportError as e:
     print(f"❌ Lib package import failed: {e}")
     try:
         from api import test_api_connection, get_pipeline_data, get_templates, test_connection_robustness, get_data_quality_stats
-        print("✅ Using direct module imports for debug")
+        print("Using direct module imports for debug")
     except ImportError as e:
         print(f"❌ Direct module import failed: {e}")
         # Fallback functions
