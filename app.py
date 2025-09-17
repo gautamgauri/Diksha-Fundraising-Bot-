@@ -505,6 +505,48 @@ def update_donor_database_endpoint():
             "backend_status": "error"
         }), 500
 
+@app.route('/api/donors/<donor_id>', methods=['PUT'])
+def update_donor_endpoint(donor_id):
+    """Update specific donor information"""
+    try:
+        if not donor_service:
+            logger.warning("Donor update - donor service not initialized")
+            return jsonify({
+                "success": False,
+                "error": "Donor service not initialized",
+                "backend_status": "service_unavailable"
+            }), 500
+
+        # Get update data from request
+        updates = request.get_json()
+        if not updates:
+            return jsonify({
+                "success": False,
+                "error": "No update data provided"
+            }), 400
+
+        # Add donor ID to the updates
+        updates['donor_id'] = donor_id
+        updates['organization_name'] = updates.get('organization_name', donor_id.replace('_', ' ').title())
+
+        # Use the existing update database functionality
+        result = donor_service.update_donor_database(updates)
+
+        if result["success"]:
+            logger.info(f"Donor {donor_id} updated successfully: {result.get('message', '')}")
+            return jsonify({"success": True, "message": "Donor updated successfully"})
+        else:
+            logger.warning(f"Donor {donor_id} update failed: {result.get('error', '')}")
+            return jsonify(result), 400
+
+    except Exception as e:
+        logger.error(f"Error updating donor {donor_id}: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "backend_status": "error"
+        }), 500
+
 @app.route('/api/moveStage', methods=['POST'])
 def move_stage():
     """Update donor stage"""
