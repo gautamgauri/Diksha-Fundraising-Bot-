@@ -13,7 +13,7 @@ st.set_page_config(
     page_title="Donor Profile Management",
     page_icon="🏷️",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 # Robust import system for Railway deployment
