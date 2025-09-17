@@ -1,0 +1,25 @@
+credentials:
+  usernames:
+    admin:
+      email: admin@dikshafoundation.org
+      name: Admin User
+      password: $2b$12$QyCr5dWpOQ/LYXWLHbINfOO8/EWGL7GEGBWHHkN1/bNe/xCmrN6re  # password: "admin123"
+    gauta:
+      email: gauta@dikshafoundation.org
+      name: Gauta
+      password: $2b$12$9kNVD3EWGe4Q3gX7RoF4N.O/1p8HQXL/VcN7P2N9RgE8K5M6T3W1x  # password: "diksha2024"
+    fundraiser:
+      email: fundraiser@dikshafoundation.org
+      name: Fundraising Team
+      password: $2b$12$ZGLkR8WqH7K9oF5Nx2Y3I.E/1p8HQXL/VcN7P2N9RgE8K5M6T3W1y  # password: "fundraise123"
+
+cookie:
+  expiry_days: 7
+  key: "diksha_fundraising_app"  # This should be a unique random key in production
+  name: "diksha_auth_cookie"
+
+preauthorized:
+  emails:
+    - admin@dikshafoundation.org
+    - gauta@dikshafoundation.org
+    - fundraiser@dikshafoundation.org

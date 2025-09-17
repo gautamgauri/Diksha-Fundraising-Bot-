@@ -33,50 +33,70 @@ def fallback_check_auth() -> bool:
     """Fallback function for check_auth - always returns True for development"""
     return True
 
-# Import with multiple fallback strategies
+# Import with multiple fallback strategies - Enhanced with streamlit-authenticator
 check_auth = fallback_check_auth
+enhanced_check_auth = fallback_check_auth
+show_auth_status = None
 
 try:
-    from lib import check_auth
-    print("✅ Using lib package import for check_auth")
+    from lib.auth import enhanced_check_auth, show_enhanced_auth_status
+    check_auth = enhanced_check_auth
+    show_auth_status = show_enhanced_auth_status
+    print("✅ Using enhanced authentication with streamlit-authenticator")
 except ImportError as e:
-    print(f"❌ Lib package import failed: {e}")
+    print(f"❌ Enhanced auth import failed: {e}, trying legacy auth")
     try:
-        from auth import check_auth  # type: ignore
-        print("✅ Using direct module import for check_auth")
+        from lib.auth import check_auth, show_auth_status
+        print("✅ Using legacy authentication")
     except ImportError as e:
-        print(f"❌ Direct module import failed: {e}")
-        if lib_path:
-            try:
-                auth_file_path = os.path.join(lib_path, 'auth.py')
-                if os.path.exists(auth_file_path):
-                    spec = importlib.util.spec_from_file_location("auth", auth_file_path)
-                    auth_module = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(auth_module)
-                    if hasattr(auth_module, 'check_auth'):
-                        check_auth = auth_module.check_auth
-                        print("✅ Using importlib for check_auth")
-            except Exception as e:
-                print(f"❌ Importlib failed: {e}")
-        
-        if check_auth == fallback_check_auth:
-            for path in possible_paths:
+        print(f"❌ Lib package import failed: {e}")
+        try:
+            from auth import check_auth  # type: ignore
+            print("✅ Using direct module import for check_auth")
+        except ImportError as e:
+            print(f"❌ Direct module import failed: {e}")
+            if lib_path:
                 try:
-                    abs_path = os.path.abspath(path)
-                    auth_file_path = os.path.join(abs_path, 'auth.py')
+                    auth_file_path = os.path.join(lib_path, 'auth.py')
                     if os.path.exists(auth_file_path):
                         spec = importlib.util.spec_from_file_location("auth", auth_file_path)
                         auth_module = importlib.util.module_from_spec(spec)
                         spec.loader.exec_module(auth_module)
-                        if hasattr(auth_module, 'check_auth'):
+                        if hasattr(auth_module, 'enhanced_check_auth'):
+                            check_auth = auth_module.enhanced_check_auth
+                            show_auth_status = getattr(auth_module, 'show_enhanced_auth_status', None)
+                            print("✅ Using importlib for enhanced_check_auth")
+                        elif hasattr(auth_module, 'check_auth'):
                             check_auth = auth_module.check_auth
-                            print(f"✅ Found check_auth in {abs_path}")
-                            break
+                            show_auth_status = getattr(auth_module, 'show_auth_status', None)
+                            print("✅ Using importlib for check_auth")
                 except Exception as e:
-                    print(f"❌ Failed to import from {path}: {e}")
-                    continue
+                    print(f"❌ Importlib failed: {e}")
 
-print(f"✅ Final check_auth import: {check_auth != fallback_check_auth}")
+            if check_auth == fallback_check_auth:
+                for path in possible_paths:
+                    try:
+                        abs_path = os.path.abspath(path)
+                        auth_file_path = os.path.join(abs_path, 'auth.py')
+                        if os.path.exists(auth_file_path):
+                            spec = importlib.util.spec_from_file_location("auth", auth_file_path)
+                            auth_module = importlib.util.module_from_spec(spec)
+                            spec.loader.exec_module(auth_module)
+                            if hasattr(auth_module, 'enhanced_check_auth'):
+                                check_auth = auth_module.enhanced_check_auth
+                                show_auth_status = getattr(auth_module, 'show_enhanced_auth_status', None)
+                                print(f"✅ Found enhanced_check_auth in {abs_path}")
+                                break
+                            elif hasattr(auth_module, 'check_auth'):
+                                check_auth = auth_module.check_auth
+                                show_auth_status = getattr(auth_module, 'show_auth_status', None)
+                                print(f"✅ Found check_auth in {abs_path}")
+                                break
+                    except Exception as e:
+                        print(f"❌ Failed to import from {path}: {e}")
+                        continue
+
+print(f"✅ Final authentication import: Enhanced={check_auth != fallback_check_auth}")
 
 # Import API functions for dashboard metrics
 def fallback_get_pipeline_data():
@@ -112,12 +132,15 @@ st.set_page_config(
 
 def main():
     """Main application function"""
-    
-    # Check authentication
+
+    # Check authentication with enhanced login experience
     if not check_auth():
-        st.error("🔒 Please authenticate to access the application")
-        st.info("Contact your administrator for access credentials.")
+        # Authentication UI is handled by the auth module
         return
+
+    # Show authentication status in sidebar if available
+    if show_auth_status:
+        show_auth_status()
     
     # Main dashboard content
     st.title("🏠 Diksha Fundraising Dashboard")
@@ -350,14 +373,7 @@ def main():
     with st.sidebar:
         st.title("🏠 Navigation")
         st.markdown("---")
-        
-        # Show user credentials for admin (if available)
-        try:
-            from lib.auth import show_user_credentials
-            show_user_credentials()
-        except:
-            pass
-        
+
         # Quick navigation buttons
         if st.button("📊 Pipeline", use_container_width=True):
             st.switch_page("pages/1_📊_Pipeline.py")

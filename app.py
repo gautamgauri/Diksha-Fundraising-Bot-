@@ -547,6 +547,76 @@ def update_donor_endpoint(donor_id):
             "backend_status": "error"
         }), 500
 
+@app.route('/api/donor/detect-duplicates', methods=['GET'])
+def detect_duplicates_endpoint():
+    """Detect duplicate organizations in the database"""
+    try:
+        if not donor_service:
+            logger.warning("Duplicate detection - donor service not initialized")
+            return jsonify({
+                "success": False,
+                "error": "Donor service not initialized",
+                "backend_status": "service_unavailable"
+            }), 500
+
+        result = donor_service.detect_duplicates()
+
+        if result["success"]:
+            logger.info(f"Duplicate detection completed - found {result.get('duplicates_found', 0)} duplicate groups")
+            return jsonify(result)
+        else:
+            logger.warning(f"Duplicate detection failed: {result.get('error', '')}")
+            return jsonify(result), 400
+
+    except Exception as e:
+        logger.error(f"Error in duplicate detection endpoint: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "backend_status": "error"
+        }), 500
+
+@app.route('/api/donor/remove-duplicates', methods=['POST'])
+def remove_duplicates_endpoint():
+    """Remove duplicate organizations from the database"""
+    try:
+        if not donor_service:
+            logger.warning("Duplicate removal - donor service not initialized")
+            return jsonify({
+                "success": False,
+                "error": "Donor service not initialized",
+                "backend_status": "service_unavailable"
+            }), 500
+
+        # Get parameters from request
+        data = request.get_json() or {}
+        keep_strategy = data.get('keep_strategy', 'newest')
+
+        # Validate strategy
+        valid_strategies = ['newest', 'oldest', 'most_complete']
+        if keep_strategy not in valid_strategies:
+            return jsonify({
+                "success": False,
+                "error": f"Invalid keep_strategy. Must be one of: {', '.join(valid_strategies)}"
+            }), 400
+
+        result = donor_service.remove_duplicates(keep_strategy)
+
+        if result["success"]:
+            logger.info(f"Duplicate removal completed - removed {result.get('removed_count', 0)} records")
+            return jsonify(result)
+        else:
+            logger.warning(f"Duplicate removal failed: {result.get('error', '')}")
+            return jsonify(result), 400
+
+    except Exception as e:
+        logger.error(f"Error in duplicate removal endpoint: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "backend_status": "error"
+        }), 500
+
 @app.route('/api/moveStage', methods=['POST'])
 def move_stage():
     """Update donor stage"""

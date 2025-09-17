@@ -1029,7 +1029,81 @@ class SheetsDB:
             
             logger.info(f"✅ Successfully added organization '{org_data.get('organization_name')}' to row {next_row}")
             return True
-            
+
         except Exception as e:
             logger.error(f"❌ Error adding organization: {e}")
+            return False
+
+    def update_organization(self, org_id: str, org_data: Dict[str, Any]) -> bool:
+        """
+        Update an existing organization record
+
+        Args:
+            org_id: Organization ID or row identifier
+            org_data: Dictionary containing updated organization information
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if not self.initialized or not self.sheets_service:
+            logger.error("❌ Sheets service not available")
+            return False
+
+        try:
+            # Find the organization by name or ID
+            pipeline = self.get_pipeline()
+            all_orgs = []
+            for stage_orgs in pipeline.values():
+                all_orgs.extend(stage_orgs)
+
+            target_org = None
+            row_number = None
+
+            # Find the organization to update
+            for i, org in enumerate(all_orgs, start=2):  # Start from row 2 (skip header)
+                if (org.get('id') == org_id or
+                    org.get('organization_name', '').strip().lower() == org_id.lower()):
+                    target_org = org
+                    row_number = i
+                    break
+
+            if not target_org or not row_number:
+                logger.warning(f"❌ Organization with ID '{org_id}' not found")
+                return False
+
+            # Prepare the updated row data in the correct order based on headers
+            row_data = [
+                org_data.get("organization_name", target_org.get("organization_name", "")),
+                org_data.get("contact_person", target_org.get("contact_person", "")),
+                org_data.get("email", target_org.get("email", "")),
+                org_data.get("phone", target_org.get("phone", "")),
+                org_data.get("current_stage", target_org.get("current_stage", "")),
+                org_data.get("previous_stage", target_org.get("previous_stage", "")),
+                org_data.get("sector_tags", target_org.get("sector_tags", "")),
+                org_data.get("geography", target_org.get("geography", "")),
+                org_data.get("alignment_score", target_org.get("alignment_score", "")),
+                org_data.get("priority", target_org.get("priority", "")),
+                org_data.get("assigned_to", target_org.get("assigned_to", "")),
+                org_data.get("estimated_grant_size", target_org.get("estimated_grant_size", "")),
+                org_data.get("source", target_org.get("source", "")),
+            ]
+
+            # Update the specific row
+            range_name = f"{self.sheet_tab}!A{row_number}:M{row_number}"
+            body = {
+                'values': [row_data]
+            }
+
+            result = self.sheets_service.spreadsheets().values().update(
+                spreadsheetId=self.sheet_id,
+                range=range_name,
+                valueInputOption='RAW',
+                body=body
+            ).execute()
+
+            logger.info(f"✅ Successfully updated organization '{org_data.get('organization_name', org_id)}' at row {row_number}")
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Error updating organization: {e}")
             return False

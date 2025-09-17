@@ -7,14 +7,19 @@ import streamlit as st
 import sys
 import os
 from datetime import datetime
+from streamlit.errors import StreamlitAPIException
 
 # Configure page to use wide layout for better readability
-st.set_page_config(
-    page_title="Donor Profile Management",
-    page_icon="🏷️",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
+try:
+    st.set_page_config(
+        page_title="Donor Profile Management",
+        page_icon="🏷️",
+        layout="wide",
+        initial_sidebar_state="collapsed"
+    )
+except StreamlitAPIException:
+    # Another page already set the config in this session; ignore the redundant call.
+    pass
 
 # Robust import system for Railway deployment
 import importlib.util
@@ -183,6 +188,82 @@ def main():
     if selected_donor:
         st.markdown("---")
 
+        # Database Management Section
+        with st.expander("🔧 Database Management", expanded=False):
+            st.markdown("**Duplicate Detection and Removal**")
+
+            col_detect, col_remove = st.columns(2)
+
+            with col_detect:
+                if st.button("🔍 Detect Duplicates", help="Scan the database for duplicate organizations"):
+                    with st.spinner("Scanning for duplicates..."):
+                        try:
+                            # Try to call the new API endpoint if available
+                            result = make_api_request("/api/donor/detect-duplicates", method="GET")
+
+                            if result and result.get("success"):
+                                duplicates_found = result.get("duplicates_found", 0)
+                                if duplicates_found > 0:
+                                    st.warning(f"⚠️ Found {duplicates_found} duplicate groups!")
+
+                                    duplicates = result.get("duplicates", [])
+                                    for dup in duplicates:
+                                        with st.expander(f"📋 {dup['original_name']} ({dup['count']} records)", expanded=True):
+                                            for i, record in enumerate(dup['records']):
+                                                st.write(f"**Record {i+1}:**")
+                                                st.write(f"- Stage: {record.get('current_stage', 'N/A')}")
+                                                st.write(f"- Contact: {record.get('contact_person', 'N/A')}")
+                                                st.write(f"- Date Added: {record.get('date_added', 'N/A')}")
+                                                if record.get('notes'):
+                                                    st.write(f"- Notes: {record.get('notes', 'N/A')}")
+                                                st.write("---")
+
+                                    st.session_state.duplicates_detected = duplicates
+                                else:
+                                    st.success("✅ No duplicates found!")
+                                    st.session_state.duplicates_detected = []
+                            else:
+                                error = result.get("error", "API not available") if result else "Backend API not available"
+                                st.error(f"❌ Could not detect duplicates: {error}")
+
+                        except Exception as e:
+                            st.error(f"❌ Error detecting duplicates: {str(e)}")
+
+            with col_remove:
+                if st.button("🗑️ Remove Duplicates", help="Remove duplicate organizations (keep newest)", type="primary"):
+                    if not hasattr(st.session_state, 'duplicates_detected') or not st.session_state.duplicates_detected:
+                        st.warning("⚠️ Please detect duplicates first!")
+                    else:
+                        with st.spinner("Removing duplicates..."):
+                            try:
+                                # Try to call the new API endpoint if available
+                                result = make_api_request("/api/donor/remove-duplicates", method="POST",
+                                                        data={"keep_strategy": "newest"})
+
+                                if result and result.get("success"):
+                                    removed_count = result.get("removed_count", 0)
+                                    st.success(f"✅ Successfully removed {removed_count} duplicate records!")
+
+                                    if result.get("removed_records"):
+                                        with st.expander("📋 Removed Records"):
+                                            for record in result["removed_records"]:
+                                                st.write(f"- {record['name']} (Stage: {record['stage']})")
+
+                                    # Clear the duplicates session state
+                                    st.session_state.duplicates_detected = []
+
+                                    # Suggest refreshing the page
+                                    st.info("💡 Refresh the page to see updated data")
+
+                                else:
+                                    error = result.get("error", "API not available") if result else "Backend API not available"
+                                    st.error(f"❌ Could not remove duplicates: {error}")
+
+                            except Exception as e:
+                                st.error(f"❌ Error removing duplicates: {str(e)}")
+
+        st.markdown("---")
+
         # Display existing donor information if available
         if input_mode == "Select from existing" and hasattr(st.session_state, 'selected_donor_data') and st.session_state.selected_donor_data:
             st.subheader(f"📊 Current Information for {selected_donor}")
@@ -337,33 +418,46 @@ def main():
                         # Update the database
                         with st.spinner("Updating donor information..."):
                             try:
-                                # Use the donor ID for updating
-                                donor_id = donor_data.get('id', selected_donor.lower().replace(' ', '_'))
+                                # Try to get a unique identifier for the donor
+                                # Use organization name as the primary identifier since that's what we store
+                                original_org_name = donor_data.get('organization_name', selected_donor)
+                                donor_id = original_org_name.lower().replace(' ', '_').replace('-', '_').replace('.', '_')
 
-                                if update_donor and donor_id:
-                                    # Try individual record update first
-                                    success = update_donor(donor_id, updated_data)
-                                    if success:
-                                        st.success("✅ Donor information updated successfully!")
-                                        st.session_state.editing_donor = False
-                                        # Update the session state data
-                                        st.session_state.selected_donor_data.update(updated_data)
-                                        st.rerun()
-                                    else:
-                                        st.error("❌ Failed to update donor information")
-                                elif update_donor_database:
-                                    # Fallback to database update
-                                    updated_data['donor_name'] = edit_org_name
+                                # Always use the database update method since it's more reliable
+                                # and handles the Google Sheets backend properly
+                                updated_data['donor_name'] = edit_org_name
+                                updated_data['original_name'] = original_org_name  # For finding the record
+
+                                if update_donor_database:
                                     result = update_donor_database(updated_data)
                                     if result and result.get('success'):
                                         st.success("✅ Donor information updated successfully!")
                                         st.session_state.editing_donor = False
                                         # Update the session state data
                                         st.session_state.selected_donor_data.update(updated_data)
+                                        # Clear cache to force refresh of data
+                                        st.cache_data.clear()
                                         st.rerun()
                                     else:
                                         error_msg = result.get('error', 'Unknown error') if result else 'Update service unavailable'
                                         st.error(f"❌ Failed to update donor information: {error_msg}")
+
+                                        # Show detailed error information for debugging
+                                        if result:
+                                            with st.expander("🔧 Debug Information"):
+                                                st.json(result)
+                                elif update_donor and donor_id:
+                                    # Fallback to individual record update (though less reliable)
+                                    success = update_donor(donor_id, updated_data)
+                                    if success:
+                                        st.success("✅ Donor information updated successfully!")
+                                        st.session_state.editing_donor = False
+                                        # Update the session state data
+                                        st.session_state.selected_donor_data.update(updated_data)
+                                        st.cache_data.clear()
+                                        st.rerun()
+                                    else:
+                                        st.error("❌ Failed to update donor information")
                                 else:
                                     st.error("❌ Update services not available")
 
@@ -554,13 +648,21 @@ def main():
 
                             def update_progress(progress_data):
                                 step = progress_data.get('step', 0)
-                                total_steps = progress_data.get('total_steps', 7)
+                                total_steps = progress_data.get('total_steps', 0)
                                 message = progress_data.get('message', '')
-                                progress_percent = (step / total_steps) * 100 if total_steps > 0 else 0
+
+                                if total_steps and total_steps > 0:
+                                    progress_ratio = min(max(step / total_steps, 0.0), 1.0)
+                                    progress_percent = progress_ratio * 100
+                                    step_display = f"{step}/{total_steps}"
+                                else:
+                                    progress_ratio = 0.0
+                                    progress_percent = 0.0
+                                    step_display = f"{step}/?"
 
                                 # Update progress bar and status with better layout
-                                progress_bar.progress(step / total_steps)
-                                progress_text.markdown(f"**Progress: {progress_percent:.1f}%** - Step {step}/{total_steps}")
+                                progress_bar.progress(progress_ratio)
+                                progress_text.markdown(f"**Progress: {progress_percent:.1f}%** - Step {step_display}")
                                 status_text.info(f"📊 {message}")
 
                             try:
@@ -617,15 +719,52 @@ def main():
 
                             with col_db:
                                 if st.button("💾 Save to Database", type="secondary", help="Save this donor to your Google Sheets database"):
-                                    # Prepare donor data for database update
+                                    # Prepare comprehensive donor data for database update
                                     donor_data = {
                                         "donor_name": selected_donor.strip(),
+                                        "organization_name": selected_donor.strip(),
                                         "website": custom_website or "",
                                         "document_url": result.get("document_url", ""),
                                         "pdf_url": result.get("pdf_url", ""),
                                         "profile_generated": "Yes",
-                                        "profile_date": result.get("end_time", "").split("T")[0] if result.get("end_time") else ""
+                                        "profile_date": result.get("end_time", "").split("T")[0] if result.get("end_time") else "",
+                                        "current_stage": "Initial Outreach",
+                                        "probability": 50,  # Default probability for generated profiles
+                                        "next_action": "Review generated profile and initiate contact",
+                                        "notes": f"AI-generated profile on {result.get('end_time', '').split('T')[0] if result.get('end_time') else ''}",
+                                        "sector_tags": "Research Generated",
+                                        "expected_amount": 0,
+                                        "assigned_to": "",
+                                        "alignment_score": 0
                                     }
+
+                                    # Try to extract additional info from research data if available
+                                    steps = result.get("steps", {})
+                                    if steps.get("research", {}).get("success"):
+                                        research_data = steps["research"].get("data", {})
+
+                                        # Extract website from research if not provided
+                                        if not donor_data["website"] and research_data.get("website_data", {}).get("url"):
+                                            donor_data["website"] = research_data["website_data"]["url"]
+
+                                        # Extract additional metadata from research
+                                        if research_data.get("wikipedia"):
+                                            wiki_data = research_data["wikipedia"]
+                                            if isinstance(wiki_data, dict):
+                                                # Look for sector information in wikipedia data
+                                                sectors = []
+                                                for key, value in wiki_data.items():
+                                                    if key.lower() in ['industry', 'type', 'focus', 'sector'] and value:
+                                                        sectors.append(str(value))
+                                                if sectors:
+                                                    donor_data["sector_tags"] = ", ".join(sectors[:3])  # Limit to 3 tags
+
+                                    # Add generation quality score if available
+                                    if steps.get("evaluation", {}).get("success"):
+                                        score = steps["evaluation"].get("score", 0)
+                                        if score:
+                                            donor_data["alignment_score"] = min(score, 100)  # Cap at 100
+                                            donor_data["notes"] += f" | Quality Score: {score}/100"
 
                                     # Update database
                                     if update_donor_database:
@@ -634,9 +773,31 @@ def main():
                                             if db_result and db_result.get("success"):
                                                 action = db_result.get("action", "saved")
                                                 st.success(f"✅ Donor {action} to database successfully!")
+
+                                                # Show what was saved
+                                                with st.expander("📝 Saved Information"):
+                                                    st.write(f"**Organization:** {donor_data['organization_name']}")
+                                                    st.write(f"**Stage:** {donor_data['current_stage']}")
+                                                    st.write(f"**Probability:** {donor_data['probability']}%")
+                                                    if donor_data['website']:
+                                                        st.write(f"**Website:** {donor_data['website']}")
+                                                    if donor_data['sector_tags']:
+                                                        st.write(f"**Sectors:** {donor_data['sector_tags']}")
+                                                    if donor_data['alignment_score']:
+                                                        st.write(f"**Alignment Score:** {donor_data['alignment_score']}/100")
+                                                    st.write(f"**Documents:** [Profile]({donor_data['document_url']})")
+
                                             else:
                                                 error = db_result.get("error", "Unknown error") if db_result else "Service unavailable"
                                                 st.error(f"❌ Failed to save to database: {error}")
+
+                                                # Show debug information for troubleshooting
+                                                with st.expander("🔧 Debug Information"):
+                                                    st.write("**Data being sent:**")
+                                                    st.json(donor_data)
+                                                    if db_result:
+                                                        st.write("**Response received:**")
+                                                        st.json(db_result)
                                     else:
                                         st.error("❌ Database update service not available")
 
@@ -720,7 +881,51 @@ def main():
             with col3:
                 # Highlight Save/Add to Database button
                 if st.button("💾 Save Prospect", type="secondary", use_container_width=True, help="Save this prospect to your database"):
-                    st.success("✅ Prospect saved to database!")
+                    # Prepare basic prospect data for database
+                    prospect_data = {
+                        "donor_name": selected_donor.strip(),
+                        "organization_name": selected_donor.strip(),
+                        "website": custom_website or "",
+                        "current_stage": "Initial Contact",
+                        "probability": 25,  # Default probability for prospects
+                        "next_action": "Initial research and outreach",
+                        "notes": f"Prospect added manually on {datetime.now().strftime('%Y-%m-%d')}",
+                        "sector_tags": "Manual Entry",
+                        "expected_amount": 0,
+                        "assigned_to": "",
+                        "alignment_score": 0,
+                        "profile_generated": "No",
+                        "document_url": "",
+                        "pdf_url": ""
+                    }
+
+                    # Save to database
+                    if update_donor_database:
+                        with st.spinner("Saving prospect to database..."):
+                            db_result = update_donor_database(prospect_data)
+                            if db_result and db_result.get("success"):
+                                action = db_result.get("action", "saved")
+                                st.success(f"✅ Prospect {action} to database successfully!")
+
+                                # Show what was saved
+                                with st.expander("📝 Saved Prospect Information"):
+                                    st.write(f"**Organization:** {prospect_data['organization_name']}")
+                                    st.write(f"**Stage:** {prospect_data['current_stage']}")
+                                    st.write(f"**Probability:** {prospect_data['probability']}%")
+                                    if prospect_data['website']:
+                                        st.write(f"**Website:** {prospect_data['website']}")
+                                    st.write(f"**Next Action:** {prospect_data['next_action']}")
+                            else:
+                                error = db_result.get("error", "Unknown error") if db_result else "Service unavailable"
+                                st.error(f"❌ Failed to save prospect: {error}")
+
+                                # Show debug information
+                                with st.expander("🔧 Debug Information"):
+                                    st.json(prospect_data)
+                                    if db_result:
+                                        st.json(db_result)
+                    else:
+                        st.error("❌ Database update service not available")
         
         else:
             st.warning("⚠️ AI Profile Generator not available")
@@ -742,8 +947,8 @@ def main():
                     st.markdown(result["profile_content"])
 
                 # Show research data and sources
-                if result.get("steps"):
-                    steps = result["steps"]
+                steps = result.get("steps") or {}
+                if steps:
 
                     # Research data section
                     if steps.get("research", {}).get("success"):
@@ -888,5 +1093,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-

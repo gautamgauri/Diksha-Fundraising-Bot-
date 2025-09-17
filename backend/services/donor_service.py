@@ -368,7 +368,25 @@ class DonorService:
                     "error": "Donor name is required"
                 }
             
-            # Prepare donor record
+            # Check if donor already exists first
+            # Check if we have an original name to search for (for updates)
+            original_name = donor_data.get("original_name", donor_name)
+
+            pipeline = self.sheets_db.get_pipeline()
+            existing_donors = []
+            for stage_orgs in pipeline.values():
+                existing_donors.extend(stage_orgs)
+            existing_donor = None
+
+            # Try to find existing donor by original name first, then by new name
+            for donor in existing_donors:
+                org_name = donor.get("organization_name", "").strip().lower()
+                if (org_name == original_name.lower() or
+                    org_name == donor_name.lower()):
+                    existing_donor = donor
+                    break
+
+            # Prepare donor record - use provided data or sensible defaults
             donor_record = {
                 "organization_name": donor_name,
                 "contact_person": donor_data.get("contact_person", ""),
@@ -376,32 +394,30 @@ class DonorService:
                 "contact_role": donor_data.get("contact_role", ""),
                 "website": donor_data.get("website", ""),
                 "sector_tags": donor_data.get("sector_tags", ""),
-                "current_stage": "Initial Outreach",
+                "current_stage": donor_data.get("current_stage", "Initial Outreach"),
                 "assigned_to": donor_data.get("assigned_to", ""),
                 "expected_amount": donor_data.get("expected_amount", 0),
                 "probability": donor_data.get("probability", 25),
                 "notes": donor_data.get("notes", ""),
-                "date_added": datetime.now().strftime("%Y-%m-%d"),
-                "last_contact_date": "",
-                "next_action": "Initial follow-up",
-                "next_action_date": "",
-                "profile_generated": "Yes",
-                "profile_date": datetime.now().strftime("%Y-%m-%d"),
+                "next_action": donor_data.get("next_action", "Initial follow-up"),
+                "next_action_date": donor_data.get("next_action_date", ""),
+                "alignment_score": donor_data.get("alignment_score", 0),
+                "profile_generated": donor_data.get("profile_generated", "Yes"),
                 "document_url": donor_data.get("document_url", ""),
                 "pdf_url": donor_data.get("pdf_url", "")
             }
-            
-            # Check if donor already exists
-            pipeline = self.sheets_db.get_pipeline()
-            existing_donors = []
-            for stage_orgs in pipeline.values():
-                existing_donors.extend(stage_orgs)
-            existing_donor = None
-            
-            for donor in existing_donors:
-                if donor.get("organization_name", "").strip().lower() == donor_name.lower():
-                    existing_donor = donor
-                    break
+
+            # Only set date_added and profile_date for new records, preserve existing for updates
+            if existing_donor:
+                # Preserve existing dates for updates
+                donor_record["date_added"] = existing_donor.get("date_added", datetime.now().strftime("%Y-%m-%d"))
+                donor_record["profile_date"] = existing_donor.get("profile_date", datetime.now().strftime("%Y-%m-%d"))
+                donor_record["last_contact_date"] = existing_donor.get("last_contact_date", "")
+            else:
+                # Set dates for new records
+                donor_record["date_added"] = datetime.now().strftime("%Y-%m-%d")
+                donor_record["profile_date"] = datetime.now().strftime("%Y-%m-%d")
+                donor_record["last_contact_date"] = ""
             
             if existing_donor:
                 # Update existing donor
@@ -488,3 +504,155 @@ class DonorService:
         except Exception as e:
             logger.error(f"Error getting available models: {e}")
             return {}
+
+    def detect_duplicates(self) -> Dict[str, Any]:
+        """Detect duplicate organizations in the database"""
+        try:
+            if not self.sheets_db or not self.sheets_db.initialized:
+                return {
+                    "success": False,
+                    "error": "Google Sheets database not initialized"
+                }
+
+            # Get all organizations from all stages
+            pipeline = self.sheets_db.get_pipeline()
+            all_orgs = []
+            for stage_orgs in pipeline.values():
+                all_orgs.extend(stage_orgs)
+
+            # Track duplicates by organization name (case-insensitive)
+            org_names = {}
+            duplicates = []
+
+            for org in all_orgs:
+                org_name = org.get('organization_name', '').strip().lower()
+                if not org_name:
+                    continue
+
+                if org_name in org_names:
+                    # Found a duplicate
+                    if org_name not in [d['name'] for d in duplicates]:
+                        # Add both original and duplicate to the list
+                        duplicates.append({
+                            'name': org_name,
+                            'original_name': org.get('organization_name', ''),
+                            'count': 2,
+                            'records': [org_names[org_name], org]
+                        })
+                    else:
+                        # Add this record to existing duplicate group
+                        for d in duplicates:
+                            if d['name'] == org_name:
+                                d['count'] += 1
+                                d['records'].append(org)
+                                break
+                else:
+                    org_names[org_name] = org
+
+            return {
+                "success": True,
+                "duplicates_found": len(duplicates),
+                "duplicates": duplicates,
+                "total_organizations": len(all_orgs)
+            }
+
+        except Exception as e:
+            logger.error(f"Error detecting duplicates: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+    def remove_duplicates(self, keep_strategy: str = "newest") -> Dict[str, Any]:
+        """
+        Remove duplicate organizations from the database
+
+        Args:
+            keep_strategy: Strategy for which record to keep ("newest", "oldest", "most_complete")
+        """
+        try:
+            if not self.sheets_db or not self.sheets_db.initialized:
+                return {
+                    "success": False,
+                    "error": "Google Sheets database not initialized"
+                }
+
+            # First detect duplicates
+            duplicate_result = self.detect_duplicates()
+            if not duplicate_result.get("success"):
+                return duplicate_result
+
+            duplicates = duplicate_result.get("duplicates", [])
+            if not duplicates:
+                return {
+                    "success": True,
+                    "message": "No duplicates found",
+                    "removed_count": 0
+                }
+
+            removed_count = 0
+            removed_records = []
+
+            for duplicate_group in duplicates:
+                records = duplicate_group['records']
+
+                # Determine which record to keep based on strategy
+                if keep_strategy == "newest":
+                    # Keep the one with the most recent date_added or last record
+                    keep_record = max(records, key=lambda x: x.get('date_added', '1900-01-01'))
+                elif keep_strategy == "oldest":
+                    # Keep the one with the oldest date_added or first record
+                    keep_record = min(records, key=lambda x: x.get('date_added', '2099-12-31'))
+                else:  # most_complete
+                    # Keep the one with the most non-empty fields
+                    keep_record = max(records, key=lambda x: sum(1 for v in x.values() if v and str(v).strip()))
+
+                # Remove all other records
+                for record in records:
+                    if record != keep_record:
+                        record_id = record.get('id', '')
+                        org_name = record.get('organization_name', '')
+
+                        if record_id:
+                            # Try to remove by updating the record to empty values
+                            success = self._remove_organization_record(record_id)
+                            if success:
+                                removed_count += 1
+                                removed_records.append({
+                                    'id': record_id,
+                                    'name': org_name,
+                                    'stage': record.get('current_stage', '')
+                                })
+                                logger.info(f"Removed duplicate record: {org_name} (ID: {record_id})")
+
+            return {
+                "success": True,
+                "message": f"Successfully removed {removed_count} duplicate records",
+                "removed_count": removed_count,
+                "removed_records": removed_records,
+                "strategy_used": keep_strategy
+            }
+
+        except Exception as e:
+            logger.error(f"Error removing duplicates: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+    def _remove_organization_record(self, record_id: str) -> bool:
+        """
+        Remove an organization record by clearing its data
+        Note: We clear the data rather than deleting the row to maintain sheet structure
+        """
+        try:
+            # Create an empty record to overwrite the duplicate
+            empty_record = {field: "" for field in FIELD_MAPPING.keys()}
+            empty_record['id'] = record_id  # Keep the ID for identification
+
+            # Update the record with empty values
+            return self.sheets_db.update_organization(record_id, empty_record)
+
+        except Exception as e:
+            logger.error(f"Error removing organization record {record_id}: {e}")
+            return False
