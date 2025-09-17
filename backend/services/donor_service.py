@@ -477,3 +477,14 @@ class DonorService:
                 "models": {},
                 "google_docs": False
             }
+
+    def get_available_models(self) -> Dict[str, Any]:
+        """Get available AI models from the profile generator"""
+        if not self.profile_generator:
+            return {}
+
+        try:
+            return self.profile_generator.get_available_models()
+        except Exception as e:
+            logger.error(f"Error getting available models: {e}")
+            return {}
