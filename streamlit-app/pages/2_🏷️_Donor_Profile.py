@@ -173,7 +173,80 @@ def main():
     
     if selected_donor:
         st.markdown("---")
-        
+
+        # Display existing donor information if available
+        if input_mode == "Select from existing" and hasattr(st.session_state, 'selected_donor_data') and st.session_state.selected_donor_data:
+            st.subheader(f"📊 Current Information for {selected_donor}")
+
+            donor_data = st.session_state.selected_donor_data
+
+            # Create columns for organized display
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.markdown("**📋 Basic Information**")
+                st.write(f"**Organization:** {donor_data.get('organization_name', donor_data.get('name', 'N/A'))}")
+                st.write(f"**Contact Person:** {donor_data.get('contact_person', 'N/A')}")
+                st.write(f"**Role:** {donor_data.get('contact_role', 'N/A')}")
+                st.write(f"**Email:** {donor_data.get('contact_email', donor_data.get('email', 'N/A'))}")
+
+            with col2:
+                st.markdown("**💰 Fundraising Status**")
+                st.write(f"**Current Stage:** {donor_data.get('current_stage', 'N/A')}")
+                st.write(f"**Probability:** {donor_data.get('probability', 0)}%")
+                st.write(f"**Assigned To:** {donor_data.get('assigned_to', 'Unassigned')}")
+
+                # Next action and date
+                next_action = donor_data.get('next_action', 'N/A')
+                next_date = donor_data.get('next_action_date', 'N/A')
+                st.write(f"**Next Action:** {next_action}")
+                if next_date and next_date != 'N/A':
+                    st.write(f"**Next Action Date:** {next_date}")
+
+            # Additional information in a third row
+            col3, col4 = st.columns(2)
+
+            with col3:
+                if donor_data.get('sector_tags'):
+                    st.markdown("**🏷️ Sector Tags**")
+                    st.write(donor_data.get('sector_tags', 'N/A'))
+
+                if donor_data.get('last_contact_date'):
+                    st.markdown("**📅 Last Contact**")
+                    st.write(donor_data.get('last_contact_date', 'N/A'))
+
+            with col4:
+                if donor_data.get('notes'):
+                    st.markdown("**📝 Notes**")
+                    st.write(donor_data.get('notes', 'No notes available'))
+
+                if donor_data.get('updated_at'):
+                    st.markdown("**🕐 Last Updated**")
+                    st.write(donor_data.get('updated_at', 'N/A'))
+
+            # Alignment score with visual indicator
+            if donor_data.get('alignment_score'):
+                try:
+                    alignment_score = float(donor_data.get('alignment_score', 0))
+                    st.markdown("**🎯 Alignment Score**")
+                    st.progress(alignment_score / 100.0)
+                    st.write(f"{alignment_score}% alignment with Diksha Foundation")
+                except (ValueError, TypeError):
+                    st.write(f"**Alignment Score:** {donor_data.get('alignment_score', 'N/A')}")
+
+            # Show documents if available
+            if donor_data.get('documents') and len(donor_data.get('documents', [])) > 0:
+                st.markdown("**📄 Documents**")
+                documents = donor_data.get('documents', [])
+                for doc in documents:
+                    st.write(f"• {doc}")
+
+            # Debug information (collapsible)
+            with st.expander("🔧 Debug: Raw Donor Data"):
+                st.json(donor_data)
+
+            st.markdown("---")
+
         # AI Profile Generation Section - MOVED UP for immediate access
         st.subheader("🤖 AI-Powered Profile Generation")
         
