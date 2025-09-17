@@ -8,6 +8,14 @@ import sys
 import os
 from datetime import datetime
 
+# Configure page to use wide layout for better readability
+st.set_page_config(
+    page_title="Donor Profile Management",
+    page_icon="🏷️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
 # Robust import system for Railway deployment
 import importlib.util
 
@@ -772,61 +780,63 @@ def main():
 
                 st.markdown("---")
 
-        # Donor profile display
-        col1, col2 = st.columns([2, 1])
-        
+        # Donor profile display - sample data section
+        st.subheader(f"📋 {selected_donor} Profile")
+
+        # Basic information
+        st.markdown("**Contact Information**")
+        col_a, col_b = st.columns(2)
+
+        with col_a:
+            st.text_input("Organization", value="ABC Corporation", disabled=True)
+            st.text_input("Contact Person", value="John Smith", disabled=True)
+            st.text_input("Email", value="john@abccorp.com", disabled=True)
+
+        with col_b:
+            st.text_input("Phone", value="+1 (555) 123-4567", disabled=True)
+            st.text_input("Website", value="www.abccorp.com", disabled=True)
+            st.text_input("Industry", value="Technology", disabled=True)
+
+        # Quick Stats in a horizontal layout for better space usage
+        st.markdown("---")
+        st.markdown("**📊 Quick Stats**")
+
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.subheader(f"📋 {selected_donor} Profile")
-            
-            # Basic information
-            st.markdown("**Contact Information**")
-            col_a, col_b = st.columns(2)
-            
-            with col_a:
-                st.text_input("Organization", value="ABC Corporation", disabled=True)
-                st.text_input("Contact Person", value="John Smith", disabled=True)
-                st.text_input("Email", value="john@abccorp.com", disabled=True)
-            
-            with col_b:
-                st.text_input("Phone", value="+1 (555) 123-4567", disabled=True)
-                st.text_input("Website", value="www.abccorp.com", disabled=True)
-                st.text_input("Industry", value="Technology", disabled=True)
-            
-            # Donation history - DEMOTED and collapsed by default
-            # Check if there's actual donation data
-            has_donation_data = True  # For demo purposes, we'll assume there's data
-            # In real implementation, this would check: has_donation_data = len(donation_data) > 0 and any(amount != '₹0' for amount in donation_data['Amount'])
-            
-            if has_donation_data:
-                with st.expander("📊 Donation History", expanded=False):
-                    donation_data = {
-                        'Date': ['2024-01-15', '2023-12-10', '2023-11-05'],
-                        'Amount': ['₹25,00,000', '₹15,00,000', '₹10,00,000'],
-                        'Purpose': ['Education Program', 'General Fund', 'Emergency Relief'],
-                        'Status': ['Completed', 'Completed', 'Completed']
-                    }
-                    
-                    import pandas as pd
-                    df = pd.DataFrame(donation_data)
-                    st.dataframe(df, use_container_width=True)
-            else:
-                st.info("📊 No donation history available for this prospect")
-        
-        with col2:
-            st.subheader("📊 Quick Stats")
-            
-            # Key metrics
             st.metric("Total Donated", "₹50,00,000", "₹5,00,000")
+        with col2:
             st.metric("Donations Count", "3", "1")
+        with col3:
             st.metric("Avg Donation", "₹16,66,667", "₹2,00,000")
+        with col4:
             st.metric("Last Donation", "Jan 2024", "2 months ago")
-            
-            st.markdown("---")
-            
-            # Engagement score
-            st.markdown("**Engagement Score**")
+
+        # Engagement score
+        st.markdown("---")
+        st.markdown("**Engagement Score**")
+        col_eng1, col_eng2 = st.columns([3, 1])
+        with col_eng1:
             st.progress(0.75)
+        with col_eng2:
             st.caption("75% - High Engagement")
+
+        # Donation history - DEMOTED and collapsed by default
+        has_donation_data = True  # For demo purposes, we'll assume there's data
+
+        if has_donation_data:
+            with st.expander("📊 Donation History", expanded=False):
+                donation_data = {
+                    'Date': ['2024-01-15', '2023-12-10', '2023-11-05'],
+                    'Amount': ['₹25,00,000', '₹15,00,000', '₹10,00,000'],
+                    'Purpose': ['Education Program', 'General Fund', 'Emergency Relief'],
+                    'Status': ['Completed', 'Completed', 'Completed']
+                }
+
+                import pandas as pd
+                df = pd.DataFrame(donation_data)
+                st.dataframe(df, use_container_width=True)
+        else:
+            st.info("📊 No donation history available for this prospect")
             
             # Communication preferences
             st.markdown("**Communication Preferences**")
