@@ -472,19 +472,28 @@ def main():
                                         if st.button("🔄 Generate New Profile Anyway", type="secondary", help="Force generate a new profile even though one exists"):
                                             # Use appropriate generation method
                                             if use_streaming and generate_donor_profile_stream:
-                                                # Use streaming with progress tracking
-                                                progress_placeholder = st.empty()
-                                                progress_bar = st.progress(0)
-                                                status_text = st.empty()
+                                                # Use streaming with progress tracking - improved layout
+                                                force_progress_container = st.container()
+                                                with force_progress_container:
+                                                    st.markdown("---")
+                                                    col_status_f, col_progress_f = st.columns([1, 3])
+
+                                                    with col_status_f:
+                                                        status_text = st.empty()
+                                                    with col_progress_f:
+                                                        progress_text = st.empty()
+                                                        progress_bar = st.progress(0)
 
                                                 def update_progress(progress_data):
                                                     step = progress_data.get('step', 0)
                                                     total_steps = progress_data.get('total_steps', 7)
                                                     message = progress_data.get('message', '')
+                                                    progress_percent = (step / total_steps) * 100 if total_steps > 0 else 0
 
-                                                    # Update progress bar
+                                                    # Update progress bar with improved layout
                                                     progress_bar.progress(step / total_steps)
-                                                    status_text.info(f"Step {step}/{total_steps}: {message}")
+                                                    progress_text.markdown(f"**Progress: {progress_percent:.1f}%** - Step {step}/{total_steps}")
+                                                    status_text.info(f"📊 {message}")
 
                                                 result = generate_donor_profile_stream(
                                                     selected_donor.strip(),
@@ -493,8 +502,9 @@ def main():
                                                     progress_callback=update_progress
                                                 )
 
-                                                # Clear progress indicators
+                                                # Clear progress indicators with completion message
                                                 progress_bar.progress(1.0)
+                                                progress_text.markdown("**Progress: 100%** - Complete!")
                                                 status_text.success("✅ Generation completed!")
                                             else:
                                                 # Use regular generation
@@ -530,18 +540,28 @@ def main():
                             # Use streaming with real-time progress
                             st.info("🔄 **Generating profile with real-time progress updates...**")
 
-                            progress_placeholder = st.empty()
-                            progress_bar = st.progress(0)
-                            status_text = st.empty()
+                            # Create a dedicated container for progress display with full width
+                            progress_container = st.container()
+                            with progress_container:
+                                st.markdown("---")
+                                col_status, col_progress = st.columns([1, 3])
+
+                                with col_status:
+                                    status_text = st.empty()
+                                with col_progress:
+                                    progress_text = st.empty()
+                                    progress_bar = st.progress(0)
 
                             def update_progress(progress_data):
                                 step = progress_data.get('step', 0)
                                 total_steps = progress_data.get('total_steps', 7)
                                 message = progress_data.get('message', '')
+                                progress_percent = (step / total_steps) * 100 if total_steps > 0 else 0
 
-                                # Update progress bar
+                                # Update progress bar and status with better layout
                                 progress_bar.progress(step / total_steps)
-                                status_text.info(f"📊 Step {step}/{total_steps}: {message}")
+                                progress_text.markdown(f"**Progress: {progress_percent:.1f}%** - Step {step}/{total_steps}")
+                                status_text.info(f"📊 {message}")
 
                             try:
                                 result = generate_donor_profile_stream(
@@ -550,8 +570,9 @@ def main():
                                     progress_callback=update_progress
                                 )
 
-                                # Clear progress indicators
+                                # Clear progress indicators with completion message
                                 progress_bar.progress(1.0)
+                                progress_text.markdown("**Progress: 100%** - Complete!")
                                 status_text.success("✅ Generation completed!")
 
                             except Exception as e:
