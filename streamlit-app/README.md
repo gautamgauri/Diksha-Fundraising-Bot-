@@ -100,9 +100,32 @@ The Streamlit app connects to your existing Node.js backend via REST API:
 - `POST /api/log` - Log activities
 
 ### Authentication:
-- Simple email-based authentication
-- Role-based access control
-- Configurable allowlist
+- Google Workspace sign-in via `streamlit-authenticator`
+- Optional allow/deny lists for specific accounts
+- Cookie-based sessions (configure in `.streamlit/secrets.toml`)
+
+#### Configuring Google OAuth
+
+Set these secrets (or environment variables) before deploying:
+
+```toml
+[cookie]
+name = "streamlit_auth"
+key = "super-secret-signing-key"
+expiry_days = 1
+
+[oauth2.google]
+client_id = "your-client-id.apps.googleusercontent.com"
+client_secret = "your-client-secret"
+redirect_uri = "https://your-app-url"
+authorized_domains = ["dikshafoundation.org"]
+
+[auth]
+allowed_emails = []  # Optional allowlist, defaults to everyone in authorized domains
+denied_emails = []
+```
+
+You can manage these via `.streamlit/secrets.toml` locally or the Streamlit Cloud secrets manager. When deployed elsewhere, use environment variables (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, etc.).
 
 ## 🎨 UI/UX Features
 
@@ -192,6 +215,7 @@ For support and questions:
 ---
 
 **Built with ❤️ for Diksha Foundation**
+
 
 
 

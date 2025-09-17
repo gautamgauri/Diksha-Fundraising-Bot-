@@ -23,6 +23,10 @@ from urllib.parse import urlencode, quote_plus
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+try:  # Optional dependency used for certain Anthropic client configurations
+    import httpx  # type: ignore
+except ImportError:
+    httpx = None  # type: ignore
 
 class ModelManager:
     """Manages AI models for profile generation and evaluation"""
@@ -109,29 +113,25 @@ class ModelManager:
         """Select the best model for profile generation"""
         if 'anthropic' in self.models:
             return ('anthropic', 'claude-3-5-sonnet-20241022')
-        elif 'openai' in self.models:
+        if 'openai' in self.models:
             return ('openai', 'gpt-4o')
-        elif 'gemini' in self.models:
-            return ('gemini', 'gemini-1.5-pro')
-        elif 'deepseek' in self.models:
-            return ('deepseek', 'deepseek-chat')
-        else:
-            self.logger.warning("No AI models available for profile generation")
-            return None
-    
+
+        self.logger.warning(
+            "No permitted generation models available. Configure ANTHROPIC_API_KEY or OPENAI_API_KEY."
+        )
+        return None
+
     def select_best_evaluation_model(self):
         """Select the best model for profile evaluation"""
-        if 'anthropic' in self.models:
-            return ('anthropic', 'claude-3-haiku-20240307')
-        elif 'openai' in self.models:
-            return ('openai', 'gpt-4o-mini')
-        elif 'gemini' in self.models:
+        if 'gemini' in self.models:
             return ('gemini', 'gemini-1.5-flash')
-        elif 'deepseek' in self.models:
+        if 'deepseek' in self.models:
             return ('deepseek', 'deepseek-chat')
-        else:
-            self.logger.warning("No AI models available for profile evaluation")
-            return None
+
+        self.logger.warning(
+            "No permitted evaluation models available. Configure GEMINI_API_KEY or DEEPSEEK_API_KEY."
+        )
+        return None
 
 
 class DataCollector:
@@ -1023,10 +1023,15 @@ class ProfileGenerator:
     def generate_profile(self, donor_name: str, research_data: Dict) -> Dict:
         """Generate a comprehensive donor profile with automatic fallback"""
         available_models = self.model_manager.get_available_models()
-        if not available_models:
+        generation_providers = [
+            provider for provider in ['anthropic', 'openai']
+            if provider in available_models
+        ]
+
+        if not generation_providers:
             return {
                 "success": False,
-                "error": "No AI models available. Please configure ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, or DEEPSEEK_API_KEY."
+                "error": "No generation models available. Configure ANTHROPIC_API_KEY or OPENAI_API_KEY."
             }
 
         # Prepare research context
@@ -1036,19 +1041,12 @@ class ProfileGenerator:
         # Try models in priority order with automatic fallback
         model_attempts = []
 
-        for provider_name in ['anthropic', 'openai', 'gemini', 'deepseek']:
-            if provider_name not in available_models:
-                continue
-
+        for provider_name in generation_providers:
             # Get the best model for this provider
             if provider_name == 'anthropic':
                 provider, model = ('anthropic', 'claude-3-5-sonnet-20241022')
             elif provider_name == 'openai':
                 provider, model = ('openai', 'gpt-4o')
-            elif provider_name == 'gemini':
-                provider, model = ('gemini', 'gemini-1.5-pro')
-            elif provider_name == 'deepseek':
-                provider, model = ('deepseek', 'deepseek-chat')
             else:
                 continue
 
@@ -1057,10 +1055,6 @@ class ProfileGenerator:
                     response = self._generate_with_anthropic(model, prompt)
                 elif provider == 'openai':
                     response = self._generate_with_openai(model, prompt)
-                elif provider == 'gemini':
-                    response = self._generate_with_gemini(model, prompt)
-                elif provider == 'deepseek':
-                    response = self._generate_with_deepseek(model, prompt)
                 else:
                     continue
 
@@ -1081,7 +1075,7 @@ class ProfileGenerator:
         # If we get here, all models failed
         return {
             "success": False,
-            "error": f"All AI models failed. Attempts: {'; '.join(model_attempts)}",
+            "error": f"All permitted generation models failed. Attempts: {'; '.join(model_attempts)}",
             "fallback_attempts": model_attempts
         }
     
@@ -1184,9 +1178,16 @@ Make sure to:
 
                 # Strategy 2: Explicit minimal configuration
                 try:
+                    timeout_value = 30.0
+                    if httpx is not None:  # type: ignore
+                        try:
+                            timeout_value = httpx.Timeout(30.0)  # type: ignore
+                        except Exception:
+                            timeout_value = 30.0
+
                     client = anthropic.Anthropic(
                         api_key=api_key,
-                        timeout=httpx.Timeout(30.0) if 'httpx' in str(type(anthropic.Anthropic)) else 30.0
+                        timeout=timeout_value
                     )
                     self.model_manager.logger.info("✅ Anthropic client initialized with explicit timeout")
                     anthropic_config['client'] = client
@@ -1404,9 +1405,10 @@ class ProfileEvaluator:
     
     def evaluate_profile(self, profile: str, donor_name: str) -> Dict:
         """Evaluate profile quality and provide score"""
-        provider, model = self.model_manager.select_best_evaluation_model()
-        if not provider:
+        selection = self.model_manager.select_best_evaluation_model()
+        if not selection:
             return {"success": False, "error": "No evaluation models available"}
+        provider, model = selection
         
         evaluation_prompt = self._create_evaluation_prompt(profile, donor_name)
         
@@ -1545,6 +1547,59 @@ Format: Start with "SCORE: [number]" then provide detailed feedback.
             self.model_manager.logger.error(f"ProfileEvaluator OpenAI client init failed: {e}")
             return None
 
+    def _get_gemini_client(self):
+        """Return configured Gemini client if available"""
+        if 'gemini' not in self.model_manager.models:
+            return None
+        return self.model_manager.models['gemini'].get('client')
+
+    def _get_deepseek_client(self):
+        """Get or create Deepseek client mirroring generator setup"""
+        if 'deepseek' not in self.model_manager.models:
+            return None
+
+        deepseek_config = self.model_manager.models['deepseek']
+
+        if deepseek_config.get('client'):
+            return deepseek_config['client']
+
+        try:
+            import openai
+
+            self.model_manager.logger.info(
+                "Cleaning proxy environment variables for Deepseek client compatibility"
+            )
+            old_env = {}
+            proxy_vars = [
+                'HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy',
+                'ALL_PROXY', 'all_proxy', 'NO_PROXY', 'no_proxy',
+                'SOCKS_PROXY', 'socks_proxy'
+            ]
+            for var in proxy_vars:
+                if var in os.environ:
+                    old_env[var] = os.environ[var]
+                    del os.environ[var]
+
+            try:
+                client = openai.OpenAI(
+                    api_key=deepseek_config['api_key'],
+                    base_url="https://api.deepseek.com"
+                )
+                deepseek_config['client'] = client
+                return client
+            finally:
+                for var, value in old_env.items():
+                    os.environ[var] = value
+
+        except ImportError:
+            self.model_manager.logger.error(
+                "OpenAI package required for Deepseek evaluation - run: pip install openai"
+            )
+            return None
+        except Exception as e:
+            self.model_manager.logger.error(f"ProfileEvaluator Deepseek client init failed: {e}")
+            return None
+
     def _evaluate_with_anthropic(self, model: str, prompt: str) -> str:
         """Evaluate using Anthropic Claude"""
         # Lazy initialization of Anthropic client
@@ -1560,21 +1615,64 @@ Format: Start with "SCORE: [number]" then provide detailed feedback.
         )
 
         return message.content[0].text
-    
+
     def _evaluate_with_openai(self, model: str, prompt: str) -> str:
         """Evaluate using OpenAI GPT"""
         # Lazy initialization of OpenAI client
         client = self._get_openai_client()
         if not client:
             raise Exception("Failed to initialize OpenAI client")
-        
+
         response = client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=2000,
             temperature=0.1
         )
-        
+
+        return response.choices[0].message.content
+
+    def _evaluate_with_gemini(self, model: str, prompt: str) -> str:
+        """Evaluate using Google Gemini"""
+        client = self._get_gemini_client()
+        if not client:
+            raise Exception("Failed to initialize Gemini client")
+
+        gemini_model = client.GenerativeModel(model)
+        response = gemini_model.generate_content(prompt)
+
+        if hasattr(response, 'text') and response.text:
+            return response.text
+
+        if hasattr(response, 'candidates') and response.candidates:
+            for candidate in response.candidates:
+                # Different SDK versions expose either `.content.parts` or `.parts`
+                content = getattr(candidate, 'content', None)
+                parts = []
+                if content and hasattr(content, 'parts'):
+                    parts = content.parts  # type: ignore
+                elif hasattr(candidate, 'parts'):
+                    parts = candidate.parts  # type: ignore
+
+                for part in parts or []:
+                    text_value = getattr(part, 'text', None) or getattr(part, 'input_text', None)
+                    if text_value:
+                        return text_value
+
+        raise Exception("Gemini response did not contain text")
+
+    def _evaluate_with_deepseek(self, model: str, prompt: str) -> str:
+        """Evaluate using Deepseek's OpenAI-compatible API"""
+        client = self._get_deepseek_client()
+        if not client:
+            raise Exception("Failed to initialize Deepseek client")
+
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=2000,
+            temperature=0.1
+        )
         return response.choices[0].message.content
     
     def _extract_score(self, evaluation: str) -> int:
@@ -1600,6 +1698,7 @@ class GoogleDocsExporter:
         self.creds = creds
         self.docs_service = build('docs', 'v1', credentials=creds)
         self.drive_service = build('drive', 'v3', credentials=creds)
+        self.logger = logging.getLogger(__name__)
     
     def create_profile_document(self, donor_name: str, profile_content: str, 
                               folder_id: Optional[str] = None) -> Dict:
