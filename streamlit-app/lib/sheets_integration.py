@@ -45,7 +45,7 @@ class SheetsIntegration:
             credentials_base64 = os.getenv("GOOGLE_CREDENTIALS_BASE64")
             
             if not self.sheet_id or not credentials_base64:
-                logger.warning("⚠️ Missing Google Sheets configuration")
+                logger.warning("Missing Google Sheets configuration")
                 return
             
             # Decode credentials
@@ -63,16 +63,16 @@ class SheetsIntegration:
             self.sheets_service = build('sheets', 'v4', credentials=creds)
             self.initialized = True
             
-            logger.info("✅ Google Sheets integration initialized successfully")
+            logger.info("Google Sheets integration initialized successfully")
             
         except Exception as e:
-            logger.error(f"❌ Failed to initialize Google Sheets: {e}")
+            logger.error(f"Failed to initialize Google Sheets: {e}")
             self.initialized = False
     
     def get_pipeline_data(self) -> List[Dict[str, Any]]:
         """Get pipeline data from Google Sheets"""
         if not self.initialized:
-            logger.error("❌ SheetsIntegration not initialized")
+            logger.error("SheetsIntegration not initialized")
             return []
         
         try:
@@ -85,7 +85,7 @@ class SheetsIntegration:
             
             values = result.get('values', [])
             if not values:
-                logger.warning("⚠️ No data found in Pipeline Tracker tab")
+                logger.warning("No data found in Pipeline Tracker tab")
                 return []
             
             # Skip header row
@@ -107,20 +107,20 @@ class SheetsIntegration:
                 
                 pipeline_data.append(donor)
             
-            logger.info(f"✅ Retrieved {len(pipeline_data)} pipeline entries")
+            logger.info(f"Retrieved {len(pipeline_data)} pipeline entries")
             return pipeline_data
             
         except HttpError as e:
-            logger.error(f"❌ HTTP error getting pipeline data: {e}")
+            logger.error(f"HTTP error getting pipeline data: {e}")
             return []
         except Exception as e:
-            logger.error(f"❌ Error getting pipeline data: {e}")
+            logger.error(f"Error getting pipeline data: {e}")
             return []
     
     def get_interaction_log(self) -> List[Dict[str, Any]]:
         """Get interaction log data from Google Sheets"""
         if not self.initialized:
-            logger.error("❌ SheetsIntegration not initialized")
+            logger.error("SheetsIntegration not initialized")
             return []
         
         try:
@@ -133,7 +133,7 @@ class SheetsIntegration:
             
             values = result.get('values', [])
             if not values:
-                logger.warning("⚠️ No data found in Interaction Log tab")
+                logger.warning("No data found in Interaction Log tab")
                 return []
             
             # Skip header row
@@ -155,20 +155,20 @@ class SheetsIntegration:
                 
                 interactions.append(interaction)
             
-            logger.info(f"✅ Retrieved {len(interactions)} interaction log entries")
+            logger.info(f"Retrieved {len(interactions)} interaction log entries")
             return interactions
             
         except HttpError as e:
-            logger.error(f"❌ HTTP error getting interaction log: {e}")
+            logger.error(f"HTTP error getting interaction log: {e}")
             return []
         except Exception as e:
-            logger.error(f"❌ Error getting interaction log: {e}")
+            logger.error(f"Error getting interaction log: {e}")
             return []
     
     def get_proposals(self) -> List[Dict[str, Any]]:
         """Get proposals data from Google Sheets"""
         if not self.initialized:
-            logger.error("❌ SheetsIntegration not initialized")
+            logger.error("SheetsIntegration not initialized")
             return []
         
         try:
@@ -181,7 +181,7 @@ class SheetsIntegration:
             
             values = result.get('values', [])
             if not values:
-                logger.warning("⚠️ No data found in Proposals Tracker tab")
+                logger.warning("No data found in Proposals Tracker tab")
                 return []
             
             # Skip header row
@@ -203,20 +203,20 @@ class SheetsIntegration:
                 
                 proposals.append(proposal)
             
-            logger.info(f"✅ Retrieved {len(proposals)} proposals")
+            logger.info(f"Retrieved {len(proposals)} proposals")
             return proposals
             
         except HttpError as e:
-            logger.error(f"❌ HTTP error getting proposals: {e}")
+            logger.error(f"HTTP error getting proposals: {e}")
             return []
         except Exception as e:
-            logger.error(f"❌ Error getting proposals: {e}")
+            logger.error(f"Error getting proposals: {e}")
             return []
     
     def get_alerts(self) -> List[Dict[str, Any]]:
         """Get alerts data from Google Sheets"""
         if not self.initialized:
-            logger.error("❌ SheetsIntegration not initialized")
+            logger.error("SheetsIntegration not initialized")
             return []
         
         try:
@@ -229,7 +229,7 @@ class SheetsIntegration:
             
             values = result.get('values', [])
             if not values:
-                logger.warning("⚠️ No data found in Deadline Alerts Log tab")
+                logger.warning("No data found in Deadline Alerts Log tab")
                 return []
             
             # Skip header row
@@ -251,14 +251,14 @@ class SheetsIntegration:
                 
                 alerts.append(alert)
             
-            logger.info(f"✅ Retrieved {len(alerts)} alerts")
+            logger.info(f"Retrieved {len(alerts)} alerts")
             return alerts
             
         except HttpError as e:
-            logger.error(f"❌ HTTP error getting alerts: {e}")
+            logger.error(f"HTTP error getting alerts: {e}")
             return []
         except Exception as e:
-            logger.error(f"❌ Error getting alerts: {e}")
+            logger.error(f"Error getting alerts: {e}")
             return []
 
 # Global instance

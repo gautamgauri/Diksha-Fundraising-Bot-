@@ -60,14 +60,14 @@ get_proposals = fallback_get_proposals
 
 try:
     from lib.api import get_proposals
-    print("✅ Using lib.api import for get_proposals")
+    print("Using lib.api import for get_proposals")
 except ImportError as e:
-    print(f"❌ Lib.api import failed: {e}")
+    print(f"Lib.api import failed: {e}")
     try:
         from api import get_proposals  # type: ignore
-        print("✅ Using direct api import for get_proposals")
+        print("Using direct api import for get_proposals")
     except ImportError as e:
-        print(f"❌ Direct api import failed: {e}")
+        print(f"Direct api import failed: {e}")
         if lib_path:
             try:
                 api_file_path = os.path.join(lib_path, 'api.py')
@@ -77,9 +77,9 @@ except ImportError as e:
                     spec.loader.exec_module(api_module)
                     if hasattr(api_module, 'get_proposals'):
                         get_proposals = api_module.get_proposals
-                        print("✅ Using importlib for get_proposals")
+                        print("Using importlib for get_proposals")
             except Exception as e:
-                print(f"❌ Importlib failed: {e}")
+                print(f"Importlib failed: {e}")
         
         if get_proposals == fallback_get_proposals:
             for path in possible_paths:
@@ -92,13 +92,17 @@ except ImportError as e:
                         spec.loader.exec_module(api_module)
                         if hasattr(api_module, 'get_proposals'):
                             get_proposals = api_module.get_proposals
-                            print(f"✅ Found get_proposals in {abs_path}")
+                            print(f"Found get_proposals in {abs_path}")
                             break
                 except Exception as e:
-                    print(f"❌ Failed to import from {path}: {e}")
+                    print(f"Failed to import from {path}: {e}")
                     continue
 
-print(f"✅ Final get_proposals import: {get_proposals != fallback_get_proposals}")
+print(
+    "Final get_proposals import: {0}".format(
+        get_proposals != fallback_get_proposals,
+    )
+)
 
 # Page configuration
 st.set_page_config(

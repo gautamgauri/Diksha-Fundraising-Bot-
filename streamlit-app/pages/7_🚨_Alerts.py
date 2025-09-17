@@ -58,14 +58,14 @@ get_alerts = fallback_get_alerts
 
 try:
     from lib.api import get_alerts
-    print("✅ Using lib.api import for get_alerts")
+    print("Using lib.api import for get_alerts")
 except ImportError as e:
-    print(f"❌ Lib.api import failed: {e}")
+    print(f"Lib.api import failed: {e}")
     try:
         from api import get_alerts  # type: ignore
-        print("✅ Using direct api import for get_alerts")
+        print("Using direct api import for get_alerts")
     except ImportError as e:
-        print(f"❌ Direct api import failed: {e}")
+        print(f"Direct api import failed: {e}")
         if lib_path:
             try:
                 api_file_path = os.path.join(lib_path, 'api.py')
@@ -75,9 +75,9 @@ except ImportError as e:
                     spec.loader.exec_module(api_module)
                     if hasattr(api_module, 'get_alerts'):
                         get_alerts = api_module.get_alerts
-                        print("✅ Using importlib for get_alerts")
+                        print("Using importlib for get_alerts")
             except Exception as e:
-                print(f"❌ Importlib failed: {e}")
+                print(f"Importlib failed: {e}")
         
         if get_alerts == fallback_get_alerts:
             for path in possible_paths:
@@ -90,13 +90,17 @@ except ImportError as e:
                         spec.loader.exec_module(api_module)
                         if hasattr(api_module, 'get_alerts'):
                             get_alerts = api_module.get_alerts
-                            print(f"✅ Found get_alerts in {abs_path}")
+                            print(f"Found get_alerts in {abs_path}")
                             break
                 except Exception as e:
-                    print(f"❌ Failed to import from {path}: {e}")
+                    print(f"Failed to import from {path}: {e}")
                     continue
 
-print(f"✅ Final get_alerts import: {get_alerts != fallback_get_alerts}")
+print(
+    "Final get_alerts import: {0}".format(
+        get_alerts != fallback_get_alerts,
+    )
+)
 
 # Page configuration
 st.set_page_config(

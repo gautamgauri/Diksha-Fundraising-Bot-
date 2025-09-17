@@ -60,14 +60,14 @@ get_activity_log = fallback_get_activity_log
 
 try:
     from lib.api import get_activity_log
-    print("✅ Using lib.api import for get_activity_log")
+    print("Using lib.api import for get_activity_log")
 except ImportError as e:
-    print(f"❌ Lib.api import failed: {e}")
+    print(f"Lib.api import failed: {e}")
     try:
         from api import get_activity_log  # type: ignore
-        print("✅ Using direct api import for get_activity_log")
+        print("Using direct api import for get_activity_log")
     except ImportError as e:
-        print(f"❌ Direct api import failed: {e}")
+        print(f"Direct api import failed: {e}")
         if lib_path:
             try:
                 api_file_path = os.path.join(lib_path, 'api.py')
@@ -77,9 +77,9 @@ except ImportError as e:
                     spec.loader.exec_module(api_module)
                     if hasattr(api_module, 'get_activity_log'):
                         get_activity_log = api_module.get_activity_log
-                        print("✅ Using importlib for get_activity_log")
+                        print("Using importlib for get_activity_log")
             except Exception as e:
-                print(f"❌ Importlib failed: {e}")
+                print(f"Importlib failed: {e}")
         
         if get_activity_log == fallback_get_activity_log:
             for path in possible_paths:
@@ -92,13 +92,17 @@ except ImportError as e:
                         spec.loader.exec_module(api_module)
                         if hasattr(api_module, 'get_activity_log'):
                             get_activity_log = api_module.get_activity_log
-                            print(f"✅ Found get_activity_log in {abs_path}")
+                            print(f"Found get_activity_log in {abs_path}")
                             break
                 except Exception as e:
-                    print(f"❌ Failed to import from {path}: {e}")
+                    print(f"Failed to import from {path}: {e}")
                     continue
 
-print(f"✅ Final get_activity_log import: {get_activity_log != fallback_get_activity_log}")
+print(
+    "Final get_activity_log import: {0}".format(
+        get_activity_log != fallback_get_activity_log,
+    )
+)
 
 def main():
     st.title("📝 Activity Log")
@@ -365,5 +369,4 @@ def display_sample_activity_data():
 
 if __name__ == "__main__":
     main()
-
 

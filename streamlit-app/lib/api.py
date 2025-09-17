@@ -93,7 +93,7 @@ def make_api_request(endpoint: str, method: str = "GET", data: Optional[Dict] = 
         return response.json()
         
     except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
-        print(f"❌ Backend connection failed: {e}")
+        print(f"[ERROR] Backend connection failed: {e}")
         # Backend not available, use direct Google Sheets integration
         return get_data_directly_from_sheets(endpoint)
     except requests.exceptions.HTTPError as e:
@@ -112,7 +112,7 @@ def make_api_request(endpoint: str, method: str = "GET", data: Optional[Dict] = 
                 response_text = response.text.strip() if hasattr(response, 'text') and response.text else ''
                 if response_text:
                     error_message = response_text
-        log_message = f"❌ API Error {status_code}: {error_message}"
+        log_message = f"[ERROR] API Error {status_code}: {error_message}"
         print(log_message)
         if 'st' in globals():
             st.error(log_message)
@@ -121,15 +121,16 @@ def make_api_request(endpoint: str, method: str = "GET", data: Optional[Dict] = 
             return error_payload
         return {"success": False, "error": error_message, "status_code": status_code}
     except requests.exceptions.RetryError as e:
-        retry_message = f"❌ Retry error while calling backend: {e}"
+        retry_message = f"[ERROR] Retry error while calling backend: {e}"
         print(retry_message)
         if 'st' in globals():
             st.error(retry_message)
         return None
     except Exception as e:
-        print(f"❌ Unexpected error: {str(e)}")
+        message = f"[ERROR] Unexpected error: {str(e)}"
+        print(message)
         if 'st' in globals():
-            st.error(f"❌ Unexpected error: {str(e)}")
+            st.error(message)
         return None
 
 def get_data_directly_from_sheets(endpoint: str) -> Optional[Dict]:
@@ -151,7 +152,7 @@ def get_data_directly_from_sheets(endpoint: str) -> Optional[Dict]:
         
         # Check if integration is initialized
         if not sheets_integration.initialized:
-            print("❌ Google Sheets integration not initialized")
+            print("[ERROR] Google Sheets integration not initialized")
             return None
         
         # Route to appropriate data based on endpoint
@@ -221,6 +222,16 @@ def update_donor_database(donor_data: Dict[str, Any]) -> Optional[Dict]:
         return result
     except Exception as e:
         st.error(f"Error updating donor database: {e}")
+        return {"success": False, "error": str(e)}
+
+
+def archive_duplicate_entries(payload: Dict[str, Any]) -> Optional[Dict]:
+    """Archive duplicate donor entries in the Google Sheets backend."""
+    try:
+        result = make_api_request("/api/donor/archive-duplicates", method="POST", data=payload)
+        return result
+    except Exception as e:
+        st.error(f"Error archiving duplicate entries: {e}")
         return {"success": False, "error": str(e)}
 
 def get_templates() -> Optional[Dict]:

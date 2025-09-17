@@ -33,12 +33,12 @@ try:
     from lib import test_api_connection, get_pipeline_data, get_templates, test_connection_robustness, get_data_quality_stats
     print("Using lib package imports for debug")
 except ImportError as e:
-    print(f"❌ Lib package import failed: {e}")
+    print(f"Lib package import failed: {e}")
     try:
         from api import test_api_connection, get_pipeline_data, get_templates, test_connection_robustness, get_data_quality_stats
         print("Using direct module imports for debug")
     except ImportError as e:
-        print(f"❌ Direct module import failed: {e}")
+        print(f"Direct module import failed: {e}")
         # Fallback functions
         def test_api_connection():
             return {"status": "error", "error": "API module not available"}

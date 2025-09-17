@@ -37,14 +37,14 @@ get_templates = fallback_get_templates
 
 try:
     from lib.api import get_templates
-    print("✅ Using lib.api import for get_templates")
+    print("Using lib.api import for get_templates")
 except ImportError as e:
-    print(f"❌ Lib.api import failed: {e}")
+    print(f"Lib.api import failed: {e}")
     try:
         from api import get_templates  # type: ignore
-        print("✅ Using direct api import for get_templates")
+        print("Using direct api import for get_templates")
     except ImportError as e:
-        print(f"❌ Direct api import failed: {e}")
+        print(f"Direct api import failed: {e}")
         if lib_path:
             try:
                 api_file_path = os.path.join(lib_path, 'api.py')
@@ -54,9 +54,9 @@ except ImportError as e:
                     spec.loader.exec_module(api_module)
                     if hasattr(api_module, 'get_templates'):
                         get_templates = api_module.get_templates
-                        print("✅ Using importlib for get_templates")
+                        print("Using importlib for get_templates")
             except Exception as e:
-                print(f"❌ Importlib failed: {e}")
+                print(f"Importlib failed: {e}")
         
         if get_templates == fallback_get_templates:
             for path in possible_paths:
@@ -69,13 +69,17 @@ except ImportError as e:
                         spec.loader.exec_module(api_module)
                         if hasattr(api_module, 'get_templates'):
                             get_templates = api_module.get_templates
-                            print(f"✅ Found get_templates in {abs_path}")
+                            print(f"Found get_templates in {abs_path}")
                             break
                 except Exception as e:
-                    print(f"❌ Failed to import from {path}: {e}")
+                    print(f"Failed to import from {path}: {e}")
                     continue
 
-print(f"✅ Final get_templates import: {get_templates != fallback_get_templates}")
+print(
+    "Final get_templates import: {0}".format(
+        get_templates != fallback_get_templates,
+    )
+)
 
 def main():
     st.title("🧩 Email Templates")

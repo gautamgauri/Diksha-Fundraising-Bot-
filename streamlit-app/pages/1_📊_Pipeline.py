@@ -7,6 +7,8 @@ import streamlit as st
 import pandas as pd
 import sys
 import os
+from datetime import datetime
+from typing import Any, Dict, Optional
 
 # Robust import system for Railway deployment
 import importlib.util
@@ -34,6 +36,18 @@ def fallback_log_activity(activity_type: str, donor_id: str, details: str) -> bo
     """Fallback function for log_activity"""
     print(f"Fallback: Logging activity - {activity_type} for donor {donor_id}: {details}")
     return True
+
+def fallback_update_donor(donor_id: str, updates: Dict[str, Any]) -> bool:
+    print(f"Fallback: update_donor called for {donor_id} with {updates}")
+    return False
+
+def fallback_update_donor_database(donor_data: Dict[str, Any]) -> Dict[str, Any]:
+    print(f"Fallback: update_donor_database called with {donor_data}")
+    return {"success": False, "error": "update_donor_database not available"}
+
+def fallback_archive_duplicate_entries(payload: Dict[str, Any]) -> Dict[str, Any]:
+    print(f"Fallback: archive_duplicate_entries called with {payload}")
+    return {"success": False, "error": "archive_duplicate_entries not available"}
 
 def fallback_get_cached_pipeline_data():
     """Fallback function for get_cached_pipeline_data"""
@@ -80,19 +94,93 @@ def fallback_show_auth_status():
     """Fallback function for show_auth_status"""
     return True
 
+MERGE_FIELDS = [
+    'organization_name',
+    'current_stage',
+    'assigned_to',
+    'next_action',
+    'next_action_date',
+    'last_contact_date',
+    'sector_tags',
+    'probability',
+    'contact_person',
+    'contact_email',
+    'contact_role',
+    'notes',
+]
+
+FIELD_LABELS = {
+    'organization_name': 'Organization Name',
+    'current_stage': 'Current Stage',
+    'assigned_to': 'Assigned To',
+    'next_action': 'Next Action',
+    'next_action_date': 'Next Action Date',
+    'last_contact_date': 'Last Contact Date',
+    'sector_tags': 'Sector Tags',
+    'probability': 'Probability (%)',
+    'contact_person': 'Contact Person',
+    'contact_email': 'Contact Email',
+    'contact_role': 'Contact Role',
+    'notes': 'Notes',
+}
+
+STAGE_MAPPING = {
+    "initial research": "Initial Outreach",
+    "first contact": "Initial Outreach",
+    "initial contact": "Initial Outreach",
+    "intro sent": "Initial Outreach",
+    "initial outreach": "Initial Outreach",
+    "in prospect list": "In Prospect List",
+    "engaged": "Engaged",
+    "relationship building": "Engaged",
+    "follow-up sent": "Engaged",
+    "meeting scheduled": "Engaged",
+    "proposal sent": "Proposal Sent",
+    "negotiation": "Proposal Sent",
+    "decision pending": "Proposal Sent",
+    "grant received": "Grant Received",
+    "closed won": "Grant Received",
+    "closed lost": "Rejected",
+    "rejected": "Rejected",
+}
+
+
+def map_stage(stage_value: Optional[str]) -> str:
+    if not stage_value:
+        return "Unknown"
+    normalized = stage_value.strip().lower()
+    return STAGE_MAPPING.get(normalized, stage_value.strip())
+
 # Import with multiple fallback strategies
 log_activity = fallback_log_activity
 get_cached_pipeline_data = fallback_get_cached_pipeline_data
 require_auth = fallback_require_auth
 show_auth_status = fallback_show_auth_status
+update_donor = fallback_update_donor
+update_donor_database = fallback_update_donor_database
+archive_duplicate_entries = fallback_archive_duplicate_entries
 
 try:
-    from lib import log_activity, get_cached_pipeline_data, require_auth, show_auth_status
+    from lib import (
+        log_activity,
+        get_cached_pipeline_data,
+        require_auth,
+        show_auth_status,
+        update_donor,
+        update_donor_database,
+        archive_duplicate_entries,
+    )
     print("Using lib package imports")
 except ImportError as e:
     print(f"Lib package import failed: {e}")
     try:
-        from api import log_activity, get_cached_pipeline_data  # type: ignore
+        from api import (
+            log_activity,
+            get_cached_pipeline_data,
+            update_donor,
+            update_donor_database,
+            archive_duplicate_entries,
+        )  # type: ignore
         from auth import require_auth, show_auth_status  # type: ignore
         print("Using direct module imports")
     except ImportError as e:
@@ -109,8 +197,14 @@ except ImportError as e:
                         log_activity = api_module.log_activity
                     if hasattr(api_module, 'get_cached_pipeline_data'):
                         get_cached_pipeline_data = api_module.get_cached_pipeline_data
+                    if hasattr(api_module, 'update_donor'):
+                        update_donor = api_module.update_donor
+                    if hasattr(api_module, 'update_donor_database'):
+                        update_donor_database = api_module.update_donor_database
+                    if hasattr(api_module, 'archive_duplicate_entries'):
+                        archive_duplicate_entries = api_module.archive_duplicate_entries
                     print("Using importlib for api module")
-                
+
                 # Import auth module
                 auth_file_path = os.path.join(lib_path, 'auth.py')
                 if os.path.exists(auth_file_path):
@@ -123,7 +217,7 @@ except ImportError as e:
                         show_auth_status = auth_module.show_auth_status
                     print("Using importlib for auth module")
             except Exception as e:
-                print(f"❌ Importlib failed: {e}")
+                print(f"Importlib failed: {e}")
         
         # Try all possible paths with importlib
         if log_activity == fallback_log_activity or get_cached_pipeline_data == fallback_get_cached_pipeline_data:
@@ -137,12 +231,18 @@ except ImportError as e:
                         spec = importlib.util.spec_from_file_location("api", api_file_path)
                         api_module = importlib.util.module_from_spec(spec)
                         spec.loader.exec_module(api_module)
-                        if hasattr(api_module, 'log_activity'):
-                            log_activity = api_module.log_activity
-                        if hasattr(api_module, 'get_cached_pipeline_data'):
-                            get_cached_pipeline_data = api_module.get_cached_pipeline_data
-                        print(f"Found api functions in {abs_path}")
-                    
+                    if hasattr(api_module, 'log_activity'):
+                        log_activity = api_module.log_activity
+                    if hasattr(api_module, 'get_cached_pipeline_data'):
+                        get_cached_pipeline_data = api_module.get_cached_pipeline_data
+                    if hasattr(api_module, 'update_donor'):
+                        update_donor = api_module.update_donor
+                    if hasattr(api_module, 'update_donor_database'):
+                        update_donor_database = api_module.update_donor_database
+                    if hasattr(api_module, 'archive_duplicate_entries'):
+                        archive_duplicate_entries = api_module.archive_duplicate_entries
+                    print(f"Found api functions in {abs_path}")
+
                     if os.path.exists(auth_file_path):
                         spec = importlib.util.spec_from_file_location("auth", auth_file_path)
                         auth_module = importlib.util.module_from_spec(spec)
@@ -154,15 +254,18 @@ except ImportError as e:
                         print(f"Found auth functions in {abs_path}")
                         
                 except Exception as e:
-                    print(f"❌ Failed to import from {path}: {e}")
+                    print(f"Failed to import from {path}: {e}")
                     continue
 
 print(
-    "Final imports - log_activity: {0}, get_cached_pipeline_data: {1}, require_auth: {2}, show_auth_status: {3}".format(
+    "Final imports - log_activity: {0}, get_cached_pipeline_data: {1}, require_auth: {2}, show_auth_status: {3}, update_donor: {4}, update_donor_database: {5}, archive_duplicate_entries: {6}".format(
         log_activity != fallback_log_activity,
         get_cached_pipeline_data != fallback_get_cached_pipeline_data,
         require_auth != fallback_require_auth,
         show_auth_status != fallback_show_auth_status,
+        update_donor != fallback_update_donor,
+        update_donor_database != fallback_update_donor_database,
+        archive_duplicate_entries != fallback_archive_duplicate_entries,
     )
 )
 
@@ -189,14 +292,86 @@ def main():
             st.rerun()
     
     # Get pipeline data for metrics
-    pipeline_data = get_cached_pipeline_data()
+    raw_pipeline_data = get_cached_pipeline_data() or []
+
+    def parse_datetime(value: str) -> Optional[datetime]:
+        if not value:
+            return None
+        value = str(value).strip()
+        if not value:
+            return None
+        candidate = value.replace('Z', '+00:00')
+        try:
+            return datetime.fromisoformat(candidate)
+        except ValueError:
+            pass
+        for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%d-%m-%Y', '%Y/%m/%d', '%m/%d/%Y'):
+            try:
+                return datetime.strptime(value, fmt)
+            except ValueError:
+                continue
+        return None
+
+    def record_timestamp(record: Dict) -> datetime:
+        for field in ('updated_at', 'last_contact_date', 'next_action_date'):
+            candidate = parse_datetime(record.get(field))
+            if candidate:
+                return candidate
+        return datetime.min
+
+    duplicate_groups: Dict[str, Dict[str, Any]] = {}
+    primary_map: Dict[str, Dict] = {}
+    duplicate_summary: Dict[str, Dict[str, Any]] = {}
+
+    for record in raw_pipeline_data:
+        identifier = record.get('id') or record.get('organization_name') or ''
+        key = identifier.strip().lower()
+        if not key:
+            key = f"record_{len(duplicate_groups)}_{hash(tuple(sorted(record.items())))}"
+        group = duplicate_groups.setdefault(key, {'records': []})
+        group['records'].append(record)
+
+    pipeline_data = []
+    for key, group in duplicate_groups.items():
+        records = sorted(group['records'], key=record_timestamp, reverse=True)
+        primary = dict(records[0])
+        primary_map[key] = primary
+        pipeline_data.append(primary)
+        identifier = records[0].get('organization_name') or records[0].get('id') or key
+        if len(records) > 1:
+            duplicate_summary[key] = {
+                'records': records,
+                'identifier': identifier,
+            }
+
+    pipeline_merges = st.session_state.setdefault('pipeline_merges', {})
+    for key, merged in pipeline_merges.items():
+        if key in primary_map:
+            primary_map[key].update(merged)
+
+    pipeline_data = list(primary_map.values())
     
     # Calculate metrics from real data
     if pipeline_data and len(pipeline_data) > 0:
         total_prospects = len(pipeline_data)
-        active_conversations = len([d for d in pipeline_data if d.get('current_stage') in ['Initial Outreach', 'In Prospect List', 'Engaged']])
-        proposals_sent = len([d for d in pipeline_data if d.get('current_stage') == 'Proposal Sent'])
-        grant_received = len([d for d in pipeline_data if d.get('current_stage') == 'Grant Received'])
+
+        def stage_matches(record, targets):
+            mapped = map_stage(record.get('current_stage'))
+            return mapped in targets
+
+        active_targets = {
+            'Initial Outreach',
+            'In Prospect List',
+            'Engaged',
+        }
+
+        proposals_targets = {'Proposal Sent'}
+
+        grant_targets = {'Grant Received'}
+
+        active_conversations = sum(1 for d in pipeline_data if stage_matches(d, active_targets))
+        proposals_sent = sum(1 for d in pipeline_data if stage_matches(d, proposals_targets))
+        grant_received = sum(1 for d in pipeline_data if stage_matches(d, grant_targets))
     else:
         total_prospects = 0
         active_conversations = 0
@@ -215,6 +390,154 @@ def main():
     with col4:
         st.metric("Grant Received", grant_received, help="Successfully secured funding")
     
+    duplicate_groups_for_ui = {
+        key: value for key, value in duplicate_summary.items() if len(value['records']) > 1
+    }
+
+    if duplicate_groups_for_ui:
+        st.warning(
+            f"Detected {len(duplicate_groups_for_ui)} prospects with duplicate entries. "
+            "The latest record is shown below; you can merge fields from older entries."
+        )
+
+        def format_duplicate_option(key: str) -> str:
+            info = duplicate_groups_for_ui[key]
+            return f"{info['identifier']} ({len(info['records'])} entries)"
+
+        selected_duplicate_key = st.selectbox(
+            "Select a duplicate prospect to review",
+            options=list(duplicate_groups_for_ui.keys()),
+            format_func=format_duplicate_option,
+            key="duplicate_selector",
+        )
+
+        selected_group = duplicate_groups_for_ui[selected_duplicate_key]
+        records = selected_group['records']
+
+        with st.expander("View duplicate records", expanded=False):
+            st.dataframe(pd.DataFrame(records))
+
+        with st.form(f"merge_form_{selected_duplicate_key}"):
+            st.markdown("Select preferred values for each field")
+            selection_indices: Dict[str, int] = {}
+            existing_merge = pipeline_merges.get(selected_duplicate_key, {})
+
+            for field in MERGE_FIELDS:
+                label = FIELD_LABELS[field]
+                options = []
+                for idx, rec in enumerate(records):
+                    source_name = rec.get('organization_name') or rec.get('id') or f"Record {idx + 1}"
+                    value = rec.get(field, '')
+                    display_value = value if value not in (None, '') else '—'
+                    options.append((idx, f"{source_name}: {display_value}"))
+
+                default_idx = next((idx for idx, rec in enumerate(records) if rec.get(field)), 0)
+                if field in existing_merge:
+                    for idx, rec in enumerate(records):
+                        if rec.get(field) == existing_merge[field]:
+                            default_idx = idx
+                            break
+
+                selection_indices[field] = st.selectbox(
+                    label,
+                    options=[idx for idx, _ in options],
+                    format_func=lambda i, choices=options: choices[i][1],
+                    index=default_idx,
+                    key=f"merge_select_{selected_duplicate_key}_{field}",
+                )
+
+            combine_notes = st.checkbox(
+                "Combine notes from all entries", value=False, key=f"merge_notes_{selected_duplicate_key}"
+            )
+
+            submitted_merge = st.form_submit_button("Merge selected values")
+            if submitted_merge:
+                merged_record = {}
+                for field, idx in selection_indices.items():
+                    merged_record[field] = records[idx].get(field, '')
+
+                if combine_notes:
+                    notes = []
+                    for rec in records:
+                        note = rec.get('notes')
+                        if note and note not in notes:
+                            notes.append(note)
+                    merged_record['notes'] = "\n".join(notes)
+
+                pipeline_merges[selected_duplicate_key] = merged_record
+                if selected_duplicate_key in primary_map:
+                    primary_map[selected_duplicate_key].update(merged_record)
+                try:
+                    identifier = (
+                        primary_map[selected_duplicate_key].get('id')
+                        or primary_map[selected_duplicate_key].get('organization_name')
+                        or selected_duplicate_key
+                    )
+                    log_activity('merge_duplicates', str(identifier), 'Merged duplicate pipeline entries')
+                except Exception:
+                    pass
+
+                update_success = False
+                update_error: Optional[str] = None
+                try:
+                    donor_id = primary_map[selected_duplicate_key].get('id')
+                    if donor_id:
+                        update_success = update_donor(donor_id, merged_record)
+                    else:
+                        donor_name = (
+                            primary_map[selected_duplicate_key].get('organization_name')
+                            or selected_duplicate_key
+                        )
+                        payload = {**primary_map[selected_duplicate_key], **merged_record}
+                        payload['donor_name'] = donor_name
+                        response = update_donor_database(payload)
+                        update_success = bool(response and response.get('success'))
+                        if response and not response.get('success'):
+                            update_error = response.get('error')
+                except Exception as err:
+                    update_error = str(err)
+
+                if update_success:
+                    st.success("Merged values applied and saved to Sheets. Cache will refresh on next load.")
+                    try:
+                        st.cache_data.clear()
+                    except Exception:
+                        pass
+                else:
+                    message = "Merged values applied locally, but saving to Sheets failed."
+                    if update_error:
+                        message += f" Details: {update_error}"
+                    st.warning(message)
+
+                st.experimental_rerun()
+
+        older_records = records[1:]
+        if older_records:
+            archive_clicked = st.button(
+                "Archive older entries",
+                key=f"archive_{selected_duplicate_key}",
+                help="Move historical duplicates to an archive sheet",
+            )
+            if archive_clicked:
+                payload = {
+                    "primary_id": primary_map[selected_duplicate_key].get('id'),
+                    "identifier": selected_group['identifier'],
+                    "records": older_records,
+                }
+                archive_response = archive_duplicate_entries(payload)
+                if archive_response and archive_response.get('success'):
+                    st.success("Older entries archived successfully. Cache will refresh on next load.")
+                    try:
+                        st.cache_data.clear()
+                    except Exception:
+                        pass
+                    st.experimental_rerun()
+                else:
+                    error_msg = "Archiving failed."
+                    if archive_response and archive_response.get('error'):
+                        error_msg += f" Details: {archive_response['error']}"
+                    st.warning(error_msg)
+
     st.markdown("---")
     
     # Enhanced Search Bar - Make it prominent
@@ -505,28 +828,15 @@ def display_kanban_pipeline(data):
             "description": "Declined or unsuccessful prospects"
         }
     }
-    
-    # Map existing stages to new Kanban stages
-    stage_mapping = {
-        "Initial Research": "Initial Outreach",
-        "First Contact": "Initial Outreach",
-        "Initial Contact": "Initial Outreach",
-        "Intro Sent": "Initial Outreach",
-        "Relationship Building": "Engaged",
-        "Follow-up Sent": "Engaged",
-        "Proposal Sent": "Proposal Sent",
-        "Negotiation": "Proposal Sent",
-        "Decision Pending": "Proposal Sent",
-        "Closed Won": "Grant Received",
-        "Closed Lost": "Rejected"
-    }
-    
+
     # Categorize data by stages
     stage_data = {stage: [] for stage in stages.keys()}
-    
+
     for donor in data:
-        current_stage = donor.get('current_stage', 'Initial Outreach')
-        mapped_stage = stage_mapping.get(current_stage, 'In Prospect List')
+        current_stage = donor.get('current_stage', '')
+        mapped_stage = map_stage(current_stage)
+        if mapped_stage not in stage_data:
+            mapped_stage = 'In Prospect List'
         stage_data[mapped_stage].append(donor)
     
     # Create tabs for each stage

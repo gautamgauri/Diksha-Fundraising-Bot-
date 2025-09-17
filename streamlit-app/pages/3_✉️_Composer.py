@@ -55,14 +55,14 @@ add_contact = fallback_add_contact
 
 try:
     from lib.api import get_donors, send_email, get_contacts, add_contact
-    print("✅ Using lib.api imports")
+    print("Using lib.api imports")
 except ImportError as e:
-    print(f"❌ Lib.api import failed: {e}")
+    print(f"Lib.api import failed: {e}")
     try:
         from api import get_donors, send_email, get_contacts, add_contact  # type: ignore
-        print("✅ Using direct api imports")
+        print("Using direct api imports")
     except ImportError as e:
-        print(f"❌ Direct api import failed: {e}")
+        print(f"Direct api import failed: {e}")
         if lib_path:
             try:
                 api_file_path = os.path.join(lib_path, 'api.py')
@@ -78,9 +78,9 @@ except ImportError as e:
                         get_contacts = api_module.get_contacts
                     if hasattr(api_module, 'add_contact'):
                         add_contact = api_module.add_contact
-                    print("✅ Using importlib for api module")
+                    print("Using importlib for api module")
             except Exception as e:
-                print(f"❌ Importlib failed: {e}")
+                print(f"Importlib failed: {e}")
         
         if get_donors == fallback_get_donors or send_email == fallback_send_email:
             for path in possible_paths:
@@ -99,13 +99,18 @@ except ImportError as e:
                             get_contacts = api_module.get_contacts
                         if hasattr(api_module, 'add_contact'):
                             add_contact = api_module.add_contact
-                        print(f"✅ Found api functions in {abs_path}")
+                        print(f"Found api functions in {abs_path}")
                         break
                 except Exception as e:
-                    print(f"❌ Failed to import from {path}: {e}")
+                    print(f"Failed to import from {path}: {e}")
                     continue
 
-print(f"✅ Final imports - get_donors: {get_donors != fallback_get_donors}, send_email: {send_email != fallback_send_email}")
+print(
+    "Final imports - get_donors: {0}, send_email: {1}".format(
+        get_donors != fallback_get_donors,
+        send_email != fallback_send_email,
+    )
+)
 
 def main():
     st.title("✉️ Email Composer")
@@ -376,5 +381,4 @@ Diksha Fundraising Team
 
 if __name__ == "__main__":
     main()
-
 

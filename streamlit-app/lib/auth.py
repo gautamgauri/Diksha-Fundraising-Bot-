@@ -66,12 +66,40 @@ def _get_cookie_config() -> Dict[str, Any]:
 
 def _get_oauth_config() -> Dict[str, Any]:
     oauth_section = st.secrets.get("oauth2", {}).get("google", {})
+
+    # Auto-detect redirect URI based on current host
+    configured_redirect_uri = oauth_section.get("redirect_uri") or os.getenv("GOOGLE_REDIRECT_URI")
+
+    # If we have the request context, use the current host
+    redirect_uri = configured_redirect_uri
+    try:
+        # Try to get current host from Streamlit session
+        if hasattr(st, 'session_state') and hasattr(st.session_state, '_host'):
+            current_host = st.session_state._host
+        else:
+            # Fallback to detecting from environment or headers
+            current_host = os.getenv('HOST') or 'localhost:8080'
+
+        # If we're not on localhost, construct the redirect URI
+        if current_host and 'localhost' not in current_host:
+            if not current_host.startswith('http'):
+                current_host = f"https://{current_host}"
+            redirect_uri = current_host
+        elif configured_redirect_uri:
+            redirect_uri = configured_redirect_uri
+        else:
+            # Default fallbacks
+            redirect_uri = "https://fundraisingai.dikshafoundation.org"
+
+    except Exception:
+        # If auto-detection fails, use configured value or default
+        redirect_uri = configured_redirect_uri or "https://fundraisingai.dikshafoundation.org"
+
     return {
         "client_id": oauth_section.get("client_id") or os.getenv("GOOGLE_CLIENT_ID"),
         "client_secret": oauth_section.get("client_secret")
         or os.getenv("GOOGLE_CLIENT_SECRET"),
-        "redirect_uri": oauth_section.get("redirect_uri")
-        or os.getenv("GOOGLE_REDIRECT_URI"),
+        "redirect_uri": redirect_uri,
         "authorized_domains": oauth_section.get("authorized_domains")
         or _read_list("oauth2.google", "authorized_domains", ["dikshafoundation.org"]),
     }
