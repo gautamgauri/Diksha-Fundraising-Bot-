@@ -467,8 +467,7 @@ def generate_donor_profile_stream(donor_name: str, export_to_docs: bool = True,
         }
 
         # Get the API base URL
-        config = get_api_config()
-        url = f"{config['base_url']}/api/donor/generate-profile-stream"
+        url = f"{API_BASE}/api/donor/generate-profile-stream"
 
         # Set up SSE request
         headers = {
