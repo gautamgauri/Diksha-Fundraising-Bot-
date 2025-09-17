@@ -43,10 +43,11 @@ generate_donor_profile = None
 generate_donor_profile_stream = None
 get_profile_generator_status = None
 update_donor_database = None
+update_donor = None
 check_existing_donor = None
 
 try:
-    from lib.api import get_donors, get_donor_profile, generate_donor_profile, generate_donor_profile_stream, get_profile_generator_status, update_donor_database, check_existing_donor
+    from lib.api import get_donors, get_donor_profile, generate_donor_profile, generate_donor_profile_stream, get_profile_generator_status, update_donor_database, update_donor, check_existing_donor
     print("✅ Using lib.api imports")
 except ImportError as e:
     print(f"❌ Lib.api import failed: {e}")
@@ -244,6 +245,126 @@ def main():
             # Debug information (collapsible)
             with st.expander("🔧 Debug: Raw Donor Data"):
                 st.json(donor_data)
+
+            # Edit Information Section
+            st.markdown("### ✏️ Actions")
+            col_edit, col_refresh = st.columns(2)
+
+            with col_edit:
+                if st.button("✏️ Edit Information", type="secondary", use_container_width=True):
+                    st.session_state.editing_donor = True
+
+            with col_refresh:
+                if st.button("🔄 Refresh Data", type="secondary", use_container_width=True):
+                    # Clear cache and reload
+                    st.cache_data.clear()
+                    st.rerun()
+
+            # Edit Form (appears when edit button is clicked)
+            if st.session_state.get('editing_donor', False):
+                st.markdown("---")
+                st.markdown("### ✏️ Edit Donor Information")
+                st.info("📝 Make changes below and click 'Save Changes' to update the Google Sheets database.")
+
+                # Create editable form with current values
+                with st.form("edit_donor_form"):
+                    st.markdown("**📋 Basic Information**")
+                    col1, col2 = st.columns(2)
+
+                    with col1:
+                        edit_org_name = st.text_input("Organization Name", value=donor_data.get('organization_name', ''))
+                        edit_contact_person = st.text_input("Contact Person", value=donor_data.get('contact_person', ''))
+                        edit_contact_role = st.text_input("Contact Role", value=donor_data.get('contact_role', ''))
+                        edit_contact_email = st.text_input("Contact Email", value=donor_data.get('contact_email', ''))
+
+                    with col2:
+                        # Current stage dropdown
+                        stage_options = ["Initial Contact", "Building", "Proposal Sent", "Under Review", "Negotiation", "Closed Won", "Closed Lost"]
+                        current_stage_index = stage_options.index(donor_data.get('current_stage', 'Initial Contact')) if donor_data.get('current_stage') in stage_options else 0
+                        edit_current_stage = st.selectbox("Current Stage", stage_options, index=current_stage_index)
+
+                        edit_probability = st.slider("Probability (%)", 0, 100, int(donor_data.get('probability', 0)))
+                        edit_assigned_to = st.text_input("Assigned To", value=donor_data.get('assigned_to', ''))
+                        edit_next_action = st.text_input("Next Action", value=donor_data.get('next_action', ''))
+
+                    st.markdown("**🏷️ Additional Information**")
+                    col3, col4 = st.columns(2)
+
+                    with col3:
+                        edit_sector_tags = st.text_input("Sector Tags", value=donor_data.get('sector_tags', ''), help="Comma-separated tags (e.g., Education,Sports,Youth)")
+                        edit_next_action_date = st.date_input("Next Action Date", value=None, help="Optional: Set a date for the next action")
+
+                    with col4:
+                        edit_notes = st.text_area("Notes", value=donor_data.get('notes', ''), height=100)
+                        edit_alignment_score = st.slider("Alignment Score", 0, 100, int(donor_data.get('alignment_score', 0)))
+
+                    # Form buttons
+                    col_save, col_cancel = st.columns(2)
+                    with col_save:
+                        save_changes = st.form_submit_button("💾 Save Changes", type="primary", use_container_width=True)
+                    with col_cancel:
+                        cancel_edit = st.form_submit_button("❌ Cancel", use_container_width=True)
+
+                    # Handle form submission
+                    if save_changes:
+                        # Prepare updated data
+                        updated_data = {
+                            'organization_name': edit_org_name,
+                            'contact_person': edit_contact_person,
+                            'contact_role': edit_contact_role,
+                            'contact_email': edit_contact_email,
+                            'current_stage': edit_current_stage,
+                            'probability': edit_probability,
+                            'assigned_to': edit_assigned_to,
+                            'next_action': edit_next_action,
+                            'sector_tags': edit_sector_tags,
+                            'notes': edit_notes,
+                            'alignment_score': edit_alignment_score,
+                        }
+
+                        # Add next action date if provided
+                        if edit_next_action_date:
+                            updated_data['next_action_date'] = edit_next_action_date.strftime('%Y-%m-%d')
+
+                        # Update the database
+                        with st.spinner("Updating donor information..."):
+                            try:
+                                # Use the donor ID for updating
+                                donor_id = donor_data.get('id', selected_donor.lower().replace(' ', '_'))
+
+                                if update_donor and donor_id:
+                                    # Try individual record update first
+                                    success = update_donor(donor_id, updated_data)
+                                    if success:
+                                        st.success("✅ Donor information updated successfully!")
+                                        st.session_state.editing_donor = False
+                                        # Update the session state data
+                                        st.session_state.selected_donor_data.update(updated_data)
+                                        st.rerun()
+                                    else:
+                                        st.error("❌ Failed to update donor information")
+                                elif update_donor_database:
+                                    # Fallback to database update
+                                    updated_data['donor_name'] = edit_org_name
+                                    result = update_donor_database(updated_data)
+                                    if result and result.get('success'):
+                                        st.success("✅ Donor information updated successfully!")
+                                        st.session_state.editing_donor = False
+                                        # Update the session state data
+                                        st.session_state.selected_donor_data.update(updated_data)
+                                        st.rerun()
+                                    else:
+                                        error_msg = result.get('error', 'Unknown error') if result else 'Update service unavailable'
+                                        st.error(f"❌ Failed to update donor information: {error_msg}")
+                                else:
+                                    st.error("❌ Update services not available")
+
+                            except Exception as e:
+                                st.error(f"❌ Error updating donor: {str(e)}")
+
+                    if cancel_edit:
+                        st.session_state.editing_donor = False
+                        st.rerun()
 
             st.markdown("---")
 
