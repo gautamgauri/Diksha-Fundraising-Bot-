@@ -7,6 +7,16 @@ import os
 import logging
 from typing import Optional, Dict, Any
 
+# Load environment variables from .env file FIRST
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    print("✅ Backend: Environment variables loaded from .env file")
+except ImportError:
+    print("⚠️ Backend: python-dotenv not installed. Install with: pip install python-dotenv")
+except Exception as e:
+    print(f"⚠️ Backend: Error loading .env file: {e}")
+
 from .core.email_generator import EmailGenerator
 from .core.deepseek_client import DeepSeekClient
 from .core.sheets_db import SheetsDB

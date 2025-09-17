@@ -442,6 +442,95 @@ def generate_donor_profile(donor_name: str, export_to_docs: bool = True) -> Opti
             "backend_status": "error"
         }
 
+def generate_donor_profile_stream(donor_name: str, export_to_docs: bool = True,
+                                 force_generate: bool = False, progress_callback=None):
+    """
+    Generate donor profile with real-time progress updates
+
+    Args:
+        donor_name: Name of the donor/organization
+        export_to_docs: Whether to export to Google Docs
+        force_generate: Force generation even if donor exists
+        progress_callback: Function to call with progress updates
+
+    Returns:
+        Final result dict when complete
+    """
+    import requests
+    import json
+
+    try:
+        data = {
+            "donor_name": donor_name,
+            "export_to_docs": export_to_docs,
+            "force_generate": force_generate
+        }
+
+        # Get the API base URL
+        config = get_api_config()
+        url = f"{config['base_url']}/api/donor/generate-profile-stream"
+
+        # Set up SSE request
+        headers = {
+            'Accept': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+        }
+
+        with requests.post(url, json=data, headers=headers, stream=True, timeout=300) as response:
+            if response.status_code != 200:
+                return {
+                    "success": False,
+                    "error": f"HTTP {response.status_code}: {response.text}",
+                    "donor_name": donor_name,
+                    "backend_status": "error"
+                }
+
+            final_result = None
+
+            for line in response.iter_lines():
+                if line:
+                    line = line.decode('utf-8')
+                    if line.startswith('data: '):
+                        try:
+                            data = json.loads(line[6:])  # Remove 'data: ' prefix
+
+                            if data.get('type') == 'progress' and progress_callback:
+                                progress_callback(data)
+                            elif data.get('type') == 'complete':
+                                final_result = data.get('result')
+                                break
+                            elif data.get('type') == 'error':
+                                return {
+                                    "success": False,
+                                    "error": data.get('message', 'Unknown error'),
+                                    "donor_name": donor_name,
+                                    "backend_status": "error"
+                                }
+                        except json.JSONDecodeError:
+                            continue
+
+            return final_result if final_result else {
+                "success": False,
+                "error": "No result received from stream",
+                "donor_name": donor_name,
+                "backend_status": "error"
+            }
+
+    except requests.exceptions.RequestException as e:
+        return {
+            "success": False,
+            "error": f"Connection error: {str(e)}",
+            "donor_name": donor_name,
+            "backend_status": "unavailable"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"Stream processing failed: {str(e)}",
+            "donor_name": donor_name,
+            "backend_status": "error"
+        }
+
 def get_profile_generator_status() -> Optional[Dict]:
     """
     Get the status of the profile generator

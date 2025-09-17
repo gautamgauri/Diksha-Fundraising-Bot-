@@ -40,12 +40,13 @@ def fallback_get_donor_profile(donor_id):
 get_donors = fallback_get_donors
 get_donor_profile = fallback_get_donor_profile
 generate_donor_profile = None
+generate_donor_profile_stream = None
 get_profile_generator_status = None
 update_donor_database = None
 check_existing_donor = None
 
 try:
-    from lib.api import get_donors, get_donor_profile, generate_donor_profile, get_profile_generator_status, update_donor_database, check_existing_donor
+    from lib.api import get_donors, get_donor_profile, generate_donor_profile, generate_donor_profile_stream, get_profile_generator_status, update_donor_database, check_existing_donor
     print("✅ Using lib.api imports")
 except ImportError as e:
     print(f"❌ Lib.api import failed: {e}")
@@ -228,10 +229,13 @@ def main():
                 # Only show button if we have a donor name
                 can_generate = selected_donor and selected_donor.strip()
 
+                # Choose between regular and streaming generation
+                use_streaming = st.checkbox("🔄 Show real-time progress", value=True, help="Display live progress updates during generation")
+
                 if st.button("🚀 Generate Profile", type="primary", disabled=not can_generate, use_container_width=True):
                     if not can_generate:
                         st.error("Please enter a donor name first")
-                    elif generate_donor_profile:
+                    elif generate_donor_profile or generate_donor_profile_stream:
                         # Show additional info for custom donors
                         if custom_website:
                             st.info(f"🌐 Using website hint: {custom_website}")
@@ -240,10 +244,10 @@ def main():
                         if check_existing_donor:
                             with st.spinner(f"Checking if {selected_donor} already exists..."):
                                 existing_check = check_existing_donor(selected_donor.strip())
-                                
+
                                 if existing_check and existing_check.get("exists"):
                                     st.warning(f"⚠️ **Donor Already Exists!**")
-                                    
+
                                     # Show existing donor data
                                     existing_donor = existing_check.get("donor_data", {})
                                     with st.expander("📋 Existing Donor Data", expanded=True):
@@ -259,18 +263,52 @@ def main():
                                             st.write(f"**Assigned To:** {existing_donor.get('assigned_to', 'Unassigned')}")
                                             if existing_donor.get('document_url'):
                                                 st.write(f"**Profile URL:** [View Document]({existing_donor['document_url']})")
-                                    
+
                                     # Offer options
                                     col_force, col_cancel = st.columns(2)
                                     with col_force:
                                         if st.button("🔄 Generate New Profile Anyway", type="secondary", help="Force generate a new profile even though one exists"):
-                                            with st.spinner(f"Force generating new AI profile for {selected_donor}..."):
-                                                try:
+                                            # Use appropriate generation method
+                                            if use_streaming and generate_donor_profile_stream:
+                                                # Use streaming with progress tracking
+                                                progress_placeholder = st.empty()
+                                                progress_bar = st.progress(0)
+                                                status_text = st.empty()
+
+                                                def update_progress(progress_data):
+                                                    step = progress_data.get('step', 0)
+                                                    total_steps = progress_data.get('total_steps', 7)
+                                                    message = progress_data.get('message', '')
+
+                                                    # Update progress bar
+                                                    progress_bar.progress(step / total_steps)
+                                                    status_text.info(f"Step {step}/{total_steps}: {message}")
+
+                                                result = generate_donor_profile_stream(
+                                                    selected_donor.strip(),
+                                                    export_to_docs=True,
+                                                    force_generate=True,
+                                                    progress_callback=update_progress
+                                                )
+
+                                                # Clear progress indicators
+                                                progress_bar.progress(1.0)
+                                                status_text.success("✅ Generation completed!")
+                                            else:
+                                                # Use regular generation
+                                                with st.spinner(f"Force generating new AI profile for {selected_donor}..."):
                                                     result = generate_donor_profile(selected_donor.strip(), export_to_docs=True, force_generate=True)
-                                                    # Continue with normal result processing
-                                                except Exception as e:
-                                                    st.error(f"❌ Error generating profile: {e}")
-                                                    return
+
+                                            # Process result (same as below)
+                                            if result and result.get("success"):
+                                                st.success("✅ Profile generated successfully!")
+                                                st.session_state.last_profile_result = result
+                                                st.session_state.last_donor_name = selected_donor.strip()
+                                                st.rerun()
+                                            else:
+                                                error = result.get('error', 'Unknown error') if result else 'No response'
+                                                st.error(f"❌ Error generating profile: {error}")
+                                                return
                                     with col_cancel:
                                         if st.button("✅ Use Existing Data", help="Use the existing donor data"):
                                             st.success("✅ Using existing donor data!")
@@ -284,140 +322,175 @@ def main():
                                             st.session_state.last_donor_name = selected_donor.strip()
                                             st.rerun()
                                     return
-                        
+
                         # If no existing donor found, proceed with generation
-                        with st.spinner(f"Generating AI profile for {selected_donor}..."):
+                        if use_streaming and generate_donor_profile_stream:
+                            # Use streaming with real-time progress
+                            st.info("🔄 **Generating profile with real-time progress updates...**")
+
+                            progress_placeholder = st.empty()
+                            progress_bar = st.progress(0)
+                            status_text = st.empty()
+
+                            def update_progress(progress_data):
+                                step = progress_data.get('step', 0)
+                                total_steps = progress_data.get('total_steps', 7)
+                                message = progress_data.get('message', '')
+
+                                # Update progress bar
+                                progress_bar.progress(step / total_steps)
+                                status_text.info(f"📊 Step {step}/{total_steps}: {message}")
+
                             try:
-                                result = generate_donor_profile(selected_donor.strip(), export_to_docs=True)
+                                result = generate_donor_profile_stream(
+                                    selected_donor.strip(),
+                                    export_to_docs=True,
+                                    progress_callback=update_progress
+                                )
 
-                                # Handle case where result is None (shouldn't happen with new fixes, but safety check)
-                                if result is None:
-                                    st.error("❌ Service returned no response. Backend may be unavailable.")
-                                    st.info("💡 Try again in a few minutes or check your Railway deployment status.")
-                                    return
-                                
-                                if result.get("success"):
-                                    st.success("✅ Profile generated successfully!")
-                                    
-                                    # Store the result in session state for later use
-                                    st.session_state.last_profile_result = result
-                                    st.session_state.last_donor_name = selected_donor.strip()
-                                    
-                                    # Show results with action buttons
-                                    col_doc, col_pdf, col_db = st.columns(3)
-                                    
-                                    with col_doc:
-                                        if result.get("document_url"):
-                                            st.markdown(f"📄 **[View Google Doc]({result['document_url']})**")
-                                    
-                                    with col_pdf:
-                                        if result.get("pdf_url"):
-                                            st.markdown(f"📄 **[View PDF]({result['pdf_url']})**")
-                                        elif result.get("document_url"):
-                                            if st.button("📄 Export PDF", help="Export the profile as PDF"):
-                                                st.info("PDF export is included automatically with Google Docs export!")
-                                    
-                                    with col_db:
-                                        if st.button("💾 Save to Database", type="secondary", help="Save this donor to your Google Sheets database"):
-                                            # Prepare donor data for database update
-                                            donor_data = {
-                                                "donor_name": selected_donor.strip(),
-                                                "website": custom_website or "",
-                                                "document_url": result.get("document_url", ""),
-                                                "pdf_url": result.get("pdf_url", ""),
-                                                "profile_generated": "Yes",
-                                                "profile_date": result.get("end_time", "").split("T")[0] if result.get("end_time") else ""
-                                            }
-                                            
-                                            # Update database
-                                            if update_donor_database:
-                                                with st.spinner("Saving to database..."):
-                                                    db_result = update_donor_database(donor_data)
-                                                    if db_result and db_result.get("success"):
-                                                        action = db_result.get("action", "saved")
-                                                        st.success(f"✅ Donor {action} to database successfully!")
-                                                    else:
-                                                        error = db_result.get("error", "Unknown error") if db_result else "Service unavailable"
-                                                        st.error(f"❌ Failed to save to database: {error}")
-                                            else:
-                                                st.error("❌ Database update service not available")
-                                    
-                                    # Show profile preview
-                                    if result.get("profile_content"):
-                                        with st.expander("📋 Profile Preview"):
-                                            st.text_area(
-                                                "Generated Profile",
-                                                value=result["profile_content"][:1000] + "..." if len(result["profile_content"]) > 1000 else result["profile_content"],
-                                                height=300,
-                                                disabled=True
-                                            )
-                                    
-                                    # Show generation details
-                                    if result.get("steps"):
-                                        with st.expander("🔍 Generation Details"):
-                                            steps = result["steps"]
+                                # Clear progress indicators
+                                progress_bar.progress(1.0)
+                                status_text.success("✅ Generation completed!")
 
-                                            # Research step with enhanced info
-                                            if steps.get("research", {}).get("success"):
-                                                research_data = steps["research"].get("data", {})
-                                                services_used = research_data.get("services_used", [])
-                                                website_found = research_data.get("website_data", {}).get("url")
-
-                                                st.success("✅ Research completed")
-                                                if services_used:
-                                                    st.info(f"🔍 Services used: {', '.join(services_used)}")
-                                                if website_found:
-                                                    st.info(f"🌐 Website found: {website_found}")
-
-                                            # Generation step
-                                            if steps.get("generation", {}).get("success"):
-                                                model_used = steps["generation"].get("model_used", "Unknown")
-                                                st.success(f"✅ Profile generated using {model_used}")
-
-                                            # Evaluation step with detailed feedback
-                                            if steps.get("evaluation", {}).get("success"):
-                                                score = steps["evaluation"].get("score", "N/A")
-                                                evaluation_text = steps["evaluation"].get("evaluation", "")
-                                                st.success(f"✅ Quality evaluation: {score}/100")
-
-                                                if evaluation_text and "SCORE:" in evaluation_text:
-                                                    # Extract feedback from evaluation
-                                                    feedback_start = evaluation_text.find("SCORE:") + len(f"SCORE: {score}")
-                                                    feedback = evaluation_text[feedback_start:].strip()
-                                                    if feedback:
-                                                        with st.expander("📊 Quality Feedback"):
-                                                            st.text_area("AI Evaluation", feedback, height=150, disabled=True)
-
-                                            # Export step
-                                            if steps.get("export", {}).get("success"):
-                                                st.success("✅ Exported to Google Docs")
-                                            elif steps.get("export", {}).get("error"):
-                                                st.warning(f"⚠️ Export issue: {steps['export']['error']}")
-                                            
-                                            # PDF Export step
-                                            if steps.get("pdf_export", {}).get("success"):
-                                                st.success("✅ Exported to PDF")
-                                            elif steps.get("pdf_export", {}).get("error"):
-                                                st.warning(f"⚠️ PDF export issue: {steps['pdf_export']['error']}")
-
-                                            # Search services status
-                                            research_data = steps.get("research", {}).get("data", {})
-                                            if research_data.get("services_status"):
-                                                with st.expander("🔧 Search Services Status"):
-                                                    services_status = research_data["services_status"]
-                                                    for service, status in services_status.items():
-                                                        if status.get("enabled"):
-                                                            quota_status = "💚 Active" if not status.get("quota_exhausted") else "🔴 Quota Exhausted"
-                                                            limit = status.get('free_limit', 'N/A')
-                                                            if limit == float('inf'):
-                                                                limit = "Unlimited"
-                                                            st.write(f"**{service.title()}**: {quota_status} (Priority: {status.get('priority', 'N/A')}, Limit: {limit}/month)")
-                                
-                                else:
-                                    st.error(f"❌ Profile generation failed: {result.get('error', 'Unknown error')}")
-                                    
                             except Exception as e:
-                                st.error(f"❌ Error generating profile: {e}")
+                                progress_bar.empty()
+                                status_text.error(f"❌ Error during streaming generation: {e}")
+                                return
+                        else:
+                            # Use regular generation with spinner
+                            with st.spinner(f"Generating AI profile for {selected_donor}..."):
+                                try:
+                                    result = generate_donor_profile(selected_donor.strip(), export_to_docs=True)
+                                except Exception as e:
+                                    st.error(f"❌ Error generating profile: {e}")
+                                    return
+
+                        # Handle case where result is None
+                        if result is None:
+                            st.error("❌ Service returned no response. Backend may be unavailable.")
+                            st.info("💡 Try again in a few minutes or check your Railway deployment status.")
+                            return
+
+                        if result.get("success"):
+                            st.success("✅ Profile generated successfully!")
+
+                            # Store the result in session state for later use
+                            st.session_state.last_profile_result = result
+                            st.session_state.last_donor_name = selected_donor.strip()
+
+                            # Show results with action buttons
+                            col_doc, col_pdf, col_db = st.columns(3)
+
+                            with col_doc:
+                                if result.get("document_url"):
+                                    st.markdown(f"📄 **[View Google Doc]({result['document_url']})**")
+
+                            with col_pdf:
+                                if result.get("pdf_url"):
+                                    st.markdown(f"📄 **[View PDF]({result['pdf_url']})**")
+                                elif result.get("document_url"):
+                                    if st.button("📄 Export PDF", help="Export the profile as PDF"):
+                                        st.info("PDF export is included automatically with Google Docs export!")
+
+                            with col_db:
+                                if st.button("💾 Save to Database", type="secondary", help="Save this donor to your Google Sheets database"):
+                                    # Prepare donor data for database update
+                                    donor_data = {
+                                        "donor_name": selected_donor.strip(),
+                                        "website": custom_website or "",
+                                        "document_url": result.get("document_url", ""),
+                                        "pdf_url": result.get("pdf_url", ""),
+                                        "profile_generated": "Yes",
+                                        "profile_date": result.get("end_time", "").split("T")[0] if result.get("end_time") else ""
+                                    }
+
+                                    # Update database
+                                    if update_donor_database:
+                                        with st.spinner("Saving to database..."):
+                                            db_result = update_donor_database(donor_data)
+                                            if db_result and db_result.get("success"):
+                                                action = db_result.get("action", "saved")
+                                                st.success(f"✅ Donor {action} to database successfully!")
+                                            else:
+                                                error = db_result.get("error", "Unknown error") if db_result else "Service unavailable"
+                                                st.error(f"❌ Failed to save to database: {error}")
+                                    else:
+                                        st.error("❌ Database update service not available")
+
+                            # Show profile preview
+                            if result.get("profile_content"):
+                                with st.expander("📋 Profile Preview"):
+                                    st.text_area(
+                                        "Generated Profile",
+                                        value=result["profile_content"][:1000] + "..." if len(result["profile_content"]) > 1000 else result["profile_content"],
+                                        height=300,
+                                        disabled=True
+                                    )
+
+                            # Show generation details
+                            if result.get("steps"):
+                                with st.expander("🔍 Generation Details"):
+                                    steps = result["steps"]
+
+                                    # Research step with enhanced info
+                                    if steps.get("research", {}).get("success"):
+                                        research_data = steps["research"].get("data", {})
+                                        services_used = research_data.get("services_used", [])
+                                        website_found = research_data.get("website_data", {}).get("url")
+
+                                        st.success("✅ Research completed")
+                                        if services_used:
+                                            st.info(f"🔍 Services used: {', '.join(services_used)}")
+                                        if website_found:
+                                            st.info(f"🌐 Website found: {website_found}")
+
+                                    # Generation step
+                                    if steps.get("generation", {}).get("success"):
+                                        model_used = steps["generation"].get("model_used", "Unknown")
+                                        st.success(f"✅ Profile generated using {model_used}")
+
+                                    # Evaluation step with detailed feedback
+                                    if steps.get("evaluation", {}).get("success"):
+                                        score = steps["evaluation"].get("score", "N/A")
+                                        evaluation_text = steps["evaluation"].get("evaluation", "")
+                                        st.success(f"✅ Quality evaluation: {score}/100")
+
+                                        if evaluation_text and "SCORE:" in evaluation_text:
+                                            # Extract feedback from evaluation
+                                            feedback_start = evaluation_text.find("SCORE:") + len(f"SCORE: {score}")
+                                            feedback = evaluation_text[feedback_start:].strip()
+                                            if feedback:
+                                                with st.expander("📊 Quality Feedback"):
+                                                    st.text_area("AI Evaluation", feedback, height=150, disabled=True)
+
+                                    # Export step
+                                    if steps.get("export", {}).get("success"):
+                                        st.success("✅ Exported to Google Docs")
+                                    elif steps.get("export", {}).get("error"):
+                                        st.warning(f"⚠️ Export issue: {steps['export']['error']}")
+
+                                    # PDF Export step
+                                    if steps.get("pdf_export", {}).get("success"):
+                                        st.success("✅ Exported to PDF")
+                                    elif steps.get("pdf_export", {}).get("error"):
+                                        st.warning(f"⚠️ PDF export issue: {steps['pdf_export']['error']}")
+
+                                    # Search services status
+                                    research_data = steps.get("research", {}).get("data", {})
+                                    if research_data.get("services_status"):
+                                        with st.expander("🔧 Search Services Status"):
+                                            services_status = research_data["services_status"]
+                                            for service, status in services_status.items():
+                                                if status.get("enabled"):
+                                                    quota_status = "💚 Active" if not status.get("quota_exhausted") else "🔴 Quota Exhausted"
+                                                    limit = status.get('free_limit', 'N/A')
+                                                    if limit == float('inf'):
+                                                        limit = "Unlimited"
+                                                    st.write(f"**{service.title()}**: {quota_status} (Priority: {status.get('priority', 'N/A')}, Limit: {limit}/month)")
+
+                        else:
+                            st.error(f"❌ Profile generation failed: {result.get('error', 'Unknown error')}")
+
                     else:
                         st.error("Profile generation function not available")
             

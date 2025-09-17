@@ -1,9 +1,24 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 import os
 import logging
 import sys
+import json
+import threading
+import uuid
+import time
 from datetime import datetime
 from typing import Dict, Any, Optional, Tuple
+
+# Load environment variables from .env file FIRST
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    logger_temp = logging.getLogger(__name__)
+    logger_temp.info("✅ Environment variables loaded from .env file")
+except ImportError:
+    print("⚠️ python-dotenv not installed. Install with: pip install python-dotenv")
+except Exception as e:
+    print(f"⚠️ Error loading .env file: {e}")
 
 # Configure logging first
 logging.basicConfig(
@@ -271,6 +286,116 @@ def generate_donor_profile_endpoint():
             "steps": {},
             "backend_status": "error"
         }), 500
+
+# Global dictionary to store progress updates
+progress_tracker = {}
+
+@app.route('/api/donor/generate-profile-stream', methods=['POST'])
+def generate_donor_profile_stream():
+    """Generate donor profile with real-time progress updates via Server-Sent Events"""
+    try:
+        if not donor_service:
+            return Response(
+                "data: " + json.dumps({
+                    "type": "error",
+                    "message": "Donor service not available"
+                }) + "\n\n",
+                mimetype='text/plain'
+            ), 503
+
+        data = request.get_json()
+        if not data or 'donor_name' not in data:
+            return Response(
+                "data: " + json.dumps({
+                    "type": "error",
+                    "message": "donor_name is required"
+                }) + "\n\n",
+                mimetype='text/plain'
+            ), 400
+
+        donor_name = data.get('donor_name')
+        export_to_docs = data.get('export_to_docs', True)
+        force_generate = data.get('force_generate', False)
+
+        # Generate unique session ID for this request
+        session_id = str(uuid.uuid4())
+
+        def generate():
+            try:
+                # Step 1: Initialize
+                yield f"data: {json.dumps({'type': 'progress', 'step': 1, 'total_steps': 7, 'message': 'Initializing donor profile generation...', 'status': 'in_progress'})}\n\n"
+                time.sleep(0.5)
+
+                # Step 2: Check services
+                yield f"data: {json.dumps({'type': 'progress', 'step': 2, 'total_steps': 7, 'message': 'Checking AI models and services...', 'status': 'in_progress'})}\n\n"
+                available_models = donor_service.get_available_models()
+                if not available_models:
+                    yield f"data: {json.dumps({'type': 'error', 'message': 'No AI models available'})}\n\n"
+                    return
+                time.sleep(0.5)
+
+                # Step 3: Research
+                yield f"data: {json.dumps({'type': 'progress', 'step': 3, 'total_steps': 7, 'message': f'Researching {donor_name} online...', 'status': 'in_progress'})}\n\n"
+                time.sleep(1)
+
+                # Step 4: AI Generation
+                yield f"data: {json.dumps({'type': 'progress', 'step': 4, 'total_steps': 7, 'message': 'Generating AI-powered profile...', 'status': 'in_progress'})}\n\n"
+                time.sleep(1)
+
+                # Actually generate the profile
+                result = donor_service.generate_donor_profile(
+                    donor_name=donor_name,
+                    export_to_docs=export_to_docs,
+                    force_generate=force_generate
+                )
+
+                if not result.get("success"):
+                    yield f"data: {json.dumps({'type': 'error', 'message': result.get('error', 'Profile generation failed')})}\n\n"
+                    return
+
+                # Step 5: Evaluation
+                yield f"data: {json.dumps({'type': 'progress', 'step': 5, 'total_steps': 7, 'message': 'Evaluating profile quality...', 'status': 'in_progress'})}\n\n"
+                time.sleep(0.5)
+
+                # Step 6: Export (if enabled)
+                if export_to_docs:
+                    yield f"data: {json.dumps({'type': 'progress', 'step': 6, 'total_steps': 7, 'message': 'Exporting to Google Docs...', 'status': 'in_progress'})}\n\n"
+                    time.sleep(1)
+                else:
+                    yield f"data: {json.dumps({'type': 'progress', 'step': 6, 'total_steps': 7, 'message': 'Skipping export (disabled)...', 'status': 'completed'})}\n\n"
+                    time.sleep(0.2)
+
+                # Step 7: Complete
+                yield f"data: {json.dumps({'type': 'progress', 'step': 7, 'total_steps': 7, 'message': 'Profile generation completed!', 'status': 'completed'})}\n\n"
+                time.sleep(0.5)
+
+                # Send final result
+                yield f"data: {json.dumps({'type': 'complete', 'result': result})}\n\n"
+
+            except Exception as e:
+                logger.error(f"Error in profile generation stream: {e}")
+                yield f"data: {json.dumps({'type': 'error', 'message': f'Generation failed: {str(e)}'})}\n\n"
+
+        return Response(
+            generate(),
+            mimetype='text/event-stream',
+            headers={
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Headers': 'Cache-Control'
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Error setting up profile generation stream: {e}")
+        return Response(
+            "data: " + json.dumps({
+                "type": "error",
+                "message": f"Failed to start generation: {str(e)}"
+            }) + "\n\n",
+            mimetype='text/event-stream'
+        ), 500
 
 @app.route('/api/donor/profile-generator-status', methods=['GET'])
 def get_profile_generator_status_endpoint():
@@ -2476,55 +2601,82 @@ def debug_drive_templates():
 def validate_startup_components():
     """Validate all startup components and return status"""
     validation_results = {
-        "google_sheets": {"status": "❌ Not Available", "details": "Database not initialized"},
-        "google_drive": {"status": "❌ Not Available", "details": "Drive service not configured"},
-        "slack_bot": {"status": "❌ Not Available", "details": "Slack not configured"},
-        "email_generator": {"status": "❌ Not Available", "details": "Email generator not available"},
-        "claude_ai": {"status": "❌ Not Available", "details": "No API key configured"},
-        "deepseek_ai": {"status": "❌ Not Available", "details": "No API key configured"},
-        "cache_manager": {"status": "❌ Not Available", "details": "Cache manager not available"},
-        "security": {"status": "❌ Not Available", "details": "Security features not configured"},
-        "monitoring": {"status": "❌ Not Available", "details": "Monitoring not configured"}
+        "google_sheets": {"status": "Failed", "details": "Database not initialized"},
+        "google_drive": {"status": "Failed", "details": "Drive service not configured"},
+        "slack_bot": {"status": "Failed", "details": "Slack not configured"},
+        "email_generator": {"status": "Failed", "details": "Email generator not available"},
+        "claude_ai": {"status": "Failed", "details": "No API key configured"},
+        "deepseek_ai": {"status": "Failed", "details": "No API key configured"},
+        "cache_manager": {"status": "Failed", "details": "Cache manager not available"},
+        "security": {"status": "Failed", "details": "Security features not configured"},
+        "monitoring": {"status": "Failed", "details": "Monitoring not configured"}
     }
     
     # Check Google Sheets
-    if sheets_db and sheets_db.initialized:
-        validation_results["google_sheets"] = {"status": "✅ Connected", "details": f"Sheet ID: {sheets_db.sheet_id}"}
-    elif sheets_db is None:
-        validation_results["google_sheets"] = {"status": "❌ Failed", "details": "Initialization failed"}
-    
+    try:
+        if 'sheets_db' in globals() and sheets_db and getattr(sheets_db, 'initialized', False):
+            validation_results["google_sheets"] = {"status": "Connected", "details": f"Sheet ID: {sheets_db.sheet_id}"}
+        elif 'sheets_db' in globals() and sheets_db is None:
+            validation_results["google_sheets"] = {"status": "Failed", "details": "Initialization failed"}
+    except Exception as e:
+        validation_results["google_sheets"] = {"status": "Error", "details": f"Check failed: {e}"}
+
     # Check Google Drive
-    if email_generator and email_generator.drive_service:
-        validation_results["google_drive"] = {"status": "✅ Connected", "details": "Drive service ready"}
-    
+    try:
+        if 'email_generator' in globals() and email_generator and getattr(email_generator, 'drive_service', None):
+            validation_results["google_drive"] = {"status": "Connected", "details": "Drive service ready"}
+    except Exception as e:
+        validation_results["google_drive"] = {"status": "Error", "details": f"Check failed: {e}"}
+
     # Check Slack Bot
-    if slack_bot and slack_bot.is_initialized():
-        validation_results["slack_bot"] = {"status": "✅ Ready", "details": "Modular Slack integration active"}
-    
+    try:
+        if 'slack_bot' in globals() and slack_bot and getattr(slack_bot, 'is_initialized', lambda: False)():
+            validation_results["slack_bot"] = {"status": "Ready", "details": "Modular Slack integration active"}
+    except Exception as e:
+        validation_results["slack_bot"] = {"status": "Error", "details": f"Check failed: {e}"}
+
     # Check Email Generator
-    if email_generator:
-        validation_results["email_generator"] = {"status": "✅ Ready", "details": "Modular system active"}
-    
+    try:
+        if 'email_generator' in globals() and email_generator:
+            validation_results["email_generator"] = {"status": "Ready", "details": "Modular system active"}
+    except Exception as e:
+        validation_results["email_generator"] = {"status": "Error", "details": f"Check failed: {e}"}
+
     # Check Claude AI
-    if os.environ.get('ANTHROPIC_API_KEY'):
-        validation_results["claude_ai"] = {"status": "✅ Configured", "details": "AI enhancement enabled"}
-    
+    try:
+        if os.environ.get('ANTHROPIC_API_KEY'):
+            validation_results["claude_ai"] = {"status": "Configured", "details": "AI enhancement enabled"}
+    except Exception as e:
+        validation_results["claude_ai"] = {"status": "Error", "details": f"Check failed: {e}"}
+
     # Check DeepSeek AI
-    if deepseek_client and deepseek_client.initialized:
-        validation_results["deepseek_ai"] = {"status": "✅ Configured", "details": "Natural language chat enabled"}
-    
+    try:
+        if 'deepseek_client' in globals() and deepseek_client and getattr(deepseek_client, 'initialized', False):
+            validation_results["deepseek_ai"] = {"status": "Configured", "details": "Natural language chat enabled"}
+    except Exception as e:
+        validation_results["deepseek_ai"] = {"status": "Error", "details": f"Check failed: {e}"}
+
     # Check Cache Manager
-    if cache_manager:
-        validation_results["cache_manager"] = {"status": "✅ Available", "details": "Cache system ready"}
+    try:
+        if 'cache_manager' in globals() and cache_manager:
+            validation_results["cache_manager"] = {"status": "Available", "details": "Cache system ready"}
+    except Exception as e:
+        validation_results["cache_manager"] = {"status": "Error", "details": f"Check failed: {e}"}
     
     # Check Security Features
-    if slack_bot and slack_bot.is_initialized():
-        validation_results["security"] = {"status": "✅ Configured", "details": "Slack signature validation enabled"}
-    else:
-        validation_results["security"] = {"status": "⚠️ Limited", "details": "Slack signature validation disabled"}
-    
+    try:
+        if 'slack_bot' in globals() and slack_bot and getattr(slack_bot, 'is_initialized', lambda: False)():
+            validation_results["security"] = {"status": "Configured", "details": "Slack signature validation enabled"}
+        else:
+            validation_results["security"] = {"status": "Limited", "details": "Slack signature validation disabled"}
+    except Exception as e:
+        validation_results["security"] = {"status": "Error", "details": f"Check failed: {e}"}
+
     # Check Monitoring Features
-    validation_results["monitoring"] = {"status": "✅ Active", "details": "Request logging, error handling, and health checks enabled"}
+    try:
+        validation_results["monitoring"] = {"status": "Active", "details": "Request logging, error handling, and health checks enabled"}
+    except Exception as e:
+        validation_results["monitoring"] = {"status": "Error", "details": f"Check failed: {e}"}
     
     return validation_results
 
@@ -2532,27 +2684,28 @@ if __name__ == '__main__':
     port = int(os.environ.get("PORT", 3000))
     
     # Startup logging
-    print("🚀 Diksha Foundation Fundraising Bot Starting...")
+    print("Diksha Foundation Fundraising Bot Starting...")
     print("="*60)
     
     # Validate components
     validation_results = validate_startup_components()
     
     for component, result in validation_results.items():
-        print(f"{result['status']} {component.replace('_', ' ').title()}: {result['details']}")
+        status = result['status'].replace('✅', '[OK]').replace('❌', '[FAIL]').replace('⚠️', '[WARN]')
+        print(f"{status} {component.replace('_', ' ').title()}: {result['details']}")
     
-    print(f"\n🌐 Server: Starting on port {port}")
-    print(f"🔧 Debug Mode: {'✅ Enabled' if app.debug else '❌ Disabled'}")
-    
+    print(f"\nServer: Starting on port {port}")
+    print(f"Debug Mode: {'Enabled' if app.debug else 'Disabled'}")
+
     # Environment variable status
-    print(f"\n🔑 Environment Variables:")
-    print(f"   GOOGLE_CREDENTIALS_BASE64: {'✅ Set' if os.environ.get('GOOGLE_CREDENTIALS_BASE64') else '❌ Missing'}")
-    print(f"   ANTHROPIC_API_KEY: {'✅ Set' if os.environ.get('ANTHROPIC_API_KEY') else '❌ Missing'}")
-    print(f"   DEEPSEEK_API_KEY: {'✅ Set' if os.environ.get('DEEPSEEK_API_KEY') else '❌ Missing'}")
-    print(f"   SLACK_BOT_TOKEN: {'✅ Set' if os.environ.get('SLACK_BOT_TOKEN') else '❌ Missing'}")
-    print(f"   SLACK_SIGNING_SECRET: {'✅ Set' if os.environ.get('SLACK_SIGNING_SECRET') else '❌ Missing'}")
-    
-    print(f"\n📋 Available Endpoints:")
+    print(f"\nEnvironment Variables:")
+    print(f"   GOOGLE_CREDENTIALS_BASE64: {'Set' if os.environ.get('GOOGLE_CREDENTIALS_BASE64') else 'Missing'}")
+    print(f"   ANTHROPIC_API_KEY: {'Set' if os.environ.get('ANTHROPIC_API_KEY') else 'Missing'}")
+    print(f"   DEEPSEEK_API_KEY: {'Set' if os.environ.get('DEEPSEEK_API_KEY') else 'Missing'}")
+    print(f"   SLACK_BOT_TOKEN: {'Set' if os.environ.get('SLACK_BOT_TOKEN') else 'Missing'}")
+    print(f"   SLACK_SIGNING_SECRET: {'Set' if os.environ.get('SLACK_SIGNING_SECRET') else 'Missing'}")
+
+    print(f"\nAvailable Endpoints:")
     print("   • /health - Health check with detailed status")
     print("   • /debug/sheets-test - Test Google Sheets connection")
     print("   • /debug/templates - Email templates")
@@ -2561,15 +2714,15 @@ if __name__ == '__main__':
     print("   • /debug/test-deepseek - Test DeepSeek integration")
     print("   • /slack/events - Slack event handler")
     print("   • /slack/commands - Slack command handler")
-    
-    print(f"\n🚀 **New Donor Email Commands Available!**")
+
+    print(f"\n**New Donor Email Commands Available!**")
     print("   • /donoremail intro [OrgName] - First introduction")
     print("   • /donoremail concept [Org] [Project] - Concept pitch")
     print("   • /donoremail meetingrequest [Org] [Date] - Meeting request")
     print("   • /donoremail proposalcover [Org] [Project] - Proposal cover")
     print("   • /donoremail help - See all available commands")
-    
-    print(f"\n💡 **Key Features:**")
+
+    print(f"\n**Key Features:**")
     print("   • AI-enhanced emails with Claude")
     print("   • Natural language chat with DeepSeek")
     print("   • Google Drive profile integration")
@@ -2582,28 +2735,28 @@ if __name__ == '__main__':
     
     # Determine if we should start the server
     critical_components = [validation_results["google_sheets"]["status"], validation_results["email_generator"]["status"]]
-    if all("❌" in status for status in critical_components):
-        print("❌ Critical components failed. Server may not function properly.")
+    if all("X" in status or "Missing" in status for status in critical_components):
+        print("Critical components failed. Server may not function properly.")
         print("   Check environment variables and module availability.")
-    elif any("❌" in status for status in critical_components):
-        print("⚠️  Some components failed. Server will run with limited functionality.")
+    elif any("X" in status or "Missing" in status for status in critical_components):
+        print("Some components failed. Server will run with limited functionality.")
     else:
-        print("✅ All critical components ready. Server starting normally.")
-    
+        print("All critical components ready. Server starting normally.")
+
     print("="*60)
-    
+
     # Get port from environment variable (Railway requirement)
     port = int(os.getenv('PORT', 5000))
-    
-    print(f"🚀 Starting Flask app on port {port}")
-    print(f"🌐 Health check available at: http://0.0.0.0:{port}/api/health")
-    print(f"📊 Root endpoint available at: http://0.0.0.0:{port}/")
-    print(f"🔧 Backend status: {'Available' if backend_manager else 'Limited'}")
-    
+
+    print(f"Starting Flask app on port {port}")
+    print(f"Health check available at: http://0.0.0.0:{port}/api/health")
+    print(f"Root endpoint available at: http://0.0.0.0:{port}/")
+    print(f"Backend status: {'Available' if backend_manager else 'Limited'}")
+
     try:
         app.run(host='0.0.0.0', port=port, debug=False)
     except Exception as e:
-        print(f"❌ Failed to start Flask app: {e}")
+        print(f"Failed to start Flask app: {e}")
         print(f"Error type: {type(e).__name__}")
         import traceback
         traceback.print_exc()
