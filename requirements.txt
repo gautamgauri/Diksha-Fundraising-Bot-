@@ -55,3 +55,6 @@ streamlit==1.28.1
 # Additional dependencies
 bcrypt==4.0.1
 PyYAML==6.0.1
+
+# System monitoring (optional)
+psutil==5.9.6

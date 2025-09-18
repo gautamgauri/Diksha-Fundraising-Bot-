@@ -7,6 +7,15 @@ import streamlit as st
 import sys
 import os
 
+# Configure UTF-8 encoding for consistent emoji support
+if sys.stdout.encoding != 'utf-8':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except AttributeError:
+        # Python < 3.7 fallback
+        pass
+
 # Robust import system for Railway deployment
 import importlib.util
 
@@ -367,7 +376,7 @@ def main():
     # Quick actions
     st.subheader("🚀 Quick Actions")
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
         if st.button("📊 View Pipeline", use_container_width=True):
@@ -378,6 +387,10 @@ def main():
             st.switch_page("pages/3_✉️_Composer.py")
     
     with col3:
+        if st.button("💬 WhatsApp Messages", use_container_width=True):
+            st.switch_page("pages/8_💬_WhatsApp.py")
+    
+    with col4:
         if st.button("🚨 View Alerts", use_container_width=True):
             st.switch_page("pages/7_🚨_Alerts.py")
     
@@ -426,6 +439,9 @@ def main():
         
         if st.button("✉️ Email Composer", use_container_width=True):
             st.switch_page("pages/3_✉️_Composer.py")
+        
+        if st.button("💬 WhatsApp Messages", use_container_width=True):
+            st.switch_page("pages/8_💬_WhatsApp.py")
         
         if st.button("🧩 Templates", use_container_width=True):
             st.switch_page("pages/4_🧩_Templates.py")
