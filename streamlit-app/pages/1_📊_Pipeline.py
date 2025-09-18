@@ -697,7 +697,6 @@ def main():
                         st.info("🤝 Showing actively engaged prospects")
                     
                     elif quick_filter == "overdue":
-                        from datetime import datetime
                         today = datetime.now().date()
                         filtered_data = [d for d in filtered_data if 
                                        d.get('next_action_date') and 
@@ -888,12 +887,12 @@ def display_donor_card(donor, index, current_stage):
     with st.container():
         st.markdown(f"""
         <div style="
-            border: 1px solid #e0e0e0;
+            border: 1px solid #C67B5C;
             border-radius: 8px;
             padding: 16px;
             margin-bottom: 16px;
-            background-color: #fafafa;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            background-color: #F3E0C0;
+            box-shadow: 0 2px 4px rgba(198,123,92,0.2);
         ">
         """, unsafe_allow_html=True)
         
@@ -1721,3 +1720,5 @@ def show_pipeline_analytics():
 
 if __name__ == "__main__":
     main()
+
+

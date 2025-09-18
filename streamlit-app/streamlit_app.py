@@ -87,6 +87,59 @@ except ImportError as e:
 
 print(f"SUCCESS: Final authentication import: Enhanced={check_auth != fallback_check_auth}")
 
+# Import datetime for deduplication
+from datetime import datetime
+from typing import Dict, Any, Optional
+
+# Deduplication function (same logic as Pipeline page)
+def deduplicate_pipeline_data(raw_data):
+    """Remove duplicates from pipeline data, keeping the newest record for each organization"""
+    if not raw_data:
+        return []
+
+    def parse_datetime(value: str) -> Optional[datetime]:
+        if not value:
+            return None
+        value = str(value).strip()
+        if not value:
+            return None
+        candidate = value.replace('Z', '+00:00')
+        try:
+            return datetime.fromisoformat(candidate)
+        except ValueError:
+            pass
+        for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%d-%m-%Y', '%Y/%m/%d', '%m/%d/%Y'):
+            try:
+                return datetime.strptime(value, fmt)
+            except ValueError:
+                continue
+        return None
+
+    def record_timestamp(record: Dict) -> datetime:
+        for field in ('updated_at', 'last_contact_date', 'next_action_date'):
+            candidate = parse_datetime(record.get(field))
+            if candidate:
+                return candidate
+        return datetime.min
+
+    duplicate_groups: Dict[str, Dict[str, Any]] = {}
+
+    for record in raw_data:
+        identifier = record.get('id') or record.get('organization_name') or ''
+        key = identifier.strip().lower()
+        if not key:
+            key = f"record_{len(duplicate_groups)}_{hash(tuple(sorted(record.items())))}"
+        group = duplicate_groups.setdefault(key, {'records': []})
+        group['records'].append(record)
+
+    pipeline_data = []
+    for key, group in duplicate_groups.items():
+        records = sorted(group['records'], key=record_timestamp, reverse=True)
+        primary = dict(records[0])  # Use the newest record
+        pipeline_data.append(primary)
+
+    return pipeline_data
+
 # Import API functions for dashboard metrics
 def fallback_get_pipeline_data():
     return []
@@ -135,12 +188,13 @@ def main():
     st.title("🏠 Diksha Fundraising Dashboard")
     st.markdown("Welcome to your fundraising management system")
     
-    # Get real data for metrics
-    pipeline_data = get_pipeline_data()
+    # Get real data for metrics and deduplicate
+    raw_pipeline_data = get_pipeline_data()
+    pipeline_data = deduplicate_pipeline_data(raw_pipeline_data)
     proposals_data = get_proposals_data()
     activity_data = get_activity_data()
-    
-    # Calculate real metrics
+
+    # Calculate real metrics (now using deduplicated data)
     total_donors = len(pipeline_data) if pipeline_data else 0
     total_proposals = len(proposals_data) if proposals_data else 0
     total_activities = len(activity_data) if activity_data else 0
